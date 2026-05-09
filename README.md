@@ -69,10 +69,6 @@ Use CLI for quick local reads/writes without running API.
 .\.venv\Scripts\python.exe db_cli.py delete notes 1
 ```
 
-## Bootstrap Data
+## Demo Data
 
-Raw Excel files live in `data/raw`. Bootstrap JSON catalog from them:
-
-```powershell
-curl -X POST http://127.0.0.1:8000/api/v1/catalog/bootstrap
-```
+The app runs from `data/app_db.json`. Raw Excel workbooks and processed snapshots are not part of the runtime anymore.

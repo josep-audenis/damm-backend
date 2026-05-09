@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from models.schemas import OptimizeAcceptedResponse, OptimizeRequest, OptimizationResultResponse
-from services.data_loader import repository
+from services.db_repository import repository
 from services.job_manager import job_manager
 from services.optimization import optimization_service
 

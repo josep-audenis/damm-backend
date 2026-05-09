@@ -6,10 +6,19 @@ from main import app
 client = TestClient(app)
 
 
+def _transport_id_with_stops() -> str:
+    return next(
+        item["transport_id"]
+        for item in client.get("/api/v1/data/transports").json()
+        if item["stop_count"] > 0
+    )
+
+
 def test_optimize_full_streams_websocket_result() -> None:
+    transport_id = _transport_id_with_stops()
     response = client.post(
         "/api/v1/optimize/full",
-        json={"transport_id": "11420379", "truck_type": "6pal", "solver_time_limit_s": 5},
+        json={"transport_id": transport_id, "truck_type": "8pal", "solver_time_limit_s": 5},
     )
 
     assert response.status_code == 200
@@ -39,15 +48,17 @@ def test_optimize_full_streams_websocket_result() -> None:
     result = next(message["result"] for message in messages if message["type"] == "result")
     assert result["job_id"] == accepted["job_id"]
     assert result["status"] == "done"
-    assert result["route"]["transport_id"] == "11420379"
+    assert result["route"]["transport_id"] == transport_id
     assert result["load"]["pallet_slots_used"] <= result["load"]["pallet_slots_total"]
-    assert result["load"]["pick_list"]
+    assert result["load"]["total_units_delivery"] > 0
+    assert result["load"]["items_no_location"]
 
 
 def test_job_fetch_returns_completed_result() -> None:
+    transport_id = _transport_id_with_stops()
     response = client.post(
         "/api/v1/optimize/full",
-        json={"transport_id": "11420379", "truck_type": "6pal", "solver_time_limit_s": 5},
+        json={"transport_id": transport_id, "truck_type": "8pal", "solver_time_limit_s": 5},
     )
     accepted = response.json()
 
@@ -70,9 +81,10 @@ def test_unknown_websocket_job_returns_error() -> None:
 
 
 def test_oversized_load_returns_packing_overflow() -> None:
+    transport_id = _transport_id_with_stops()
     response = client.post(
         "/api/v1/optimize/full",
-        json={"transport_id": "11515121", "truck_type": "6pal", "solver_time_limit_s": 5},
+        json={"transport_id": transport_id, "truck_type": "van", "solver_time_limit_s": 5},
     )
     accepted = response.json()
 

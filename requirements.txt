@@ -1,8 +1,5 @@
 fastapi
 uvicorn
-pandas
-openpyxl
 pytest
 httpx
 ortools
-pymongo[srv]

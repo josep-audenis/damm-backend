@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class WarehouseBase(BaseModel):
@@ -81,11 +81,6 @@ class CustomerCreate(CustomerBase):
 
 class CustomerRead(CustomerBase):
     id: str
-
-
-class BootstrapResponse(BaseModel):
-    status: Literal["ok"] = "ok"
-    counts: dict[str, int] = Field(default_factory=dict)
 
 
 class GeocodeBatchResponse(BaseModel):

@@ -7,7 +7,7 @@ from models.schemas import (
     TransportDetail,
     TransportSummary,
 )
-from services.data_loader import repository
+from services.db_repository import repository
 
 
 router = APIRouter(prefix="/api/v1/data", tags=["data"])
