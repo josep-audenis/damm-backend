@@ -2,25 +2,28 @@
 
 Catalog of all wiki pages. Updated on every ingest or structural change.
 
+> Main wiki lives in [wiki/](wiki/index.md). Pages below are the current live set.
+
 ## Meta
 
-- [index.md](index.md) — this file; catalog of all wiki pages
-- [log.md](log.md) — append-only activity log (ingests, queries, updates)
+- [wiki/index.md](wiki/index.md) — canonical wiki index
+- [wiki/log.md](wiki/log.md) — append-only activity log
 
 ## Overview
 
 - [README.md](README.md) — project overview, goals, quickstart
 
-## Data
+## Contracts
 
-- [DATA_SCHEMA.md](DATA_SCHEMA.md) — Excel sheet schemas, column names, types, and gotchas
-- [DATA_MODELS.md](DATA_MODELS.md) — domain model definitions (Stop, Product, Truck, etc.)
+- [wiki/contracts/data-models.md](wiki/contracts/data-models.md) — canonical domain, request/response, visualization, and WebSocket schemas
+- [wiki/contracts/api-contract.md](wiki/contracts/api-contract.md) — endpoint paths, payload shapes, frontend/backend communication flow
+- [wiki/contracts/separation-of-concerns.md](wiki/contracts/separation-of-concerns.md) — what backend owns, what frontend owns, shared
 
-## Technical
+## Agent Instructions
 
-- [ALGORITHMS.md](ALGORITHMS.md) — VRP solver design and 3D bin-packing logic
-- [BACKEND_PLAN.md](BACKEND_PLAN.md) — FastAPI route design, service layer, implementation plan
+- [wiki/backend/agent-instructions.md](wiki/backend/agent-instructions.md) — backend implementation rules
+- [wiki/frontend/agent-instructions.md](wiki/frontend/agent-instructions.md) — frontend implementation rules
 
-## Planning
+## Decisions
 
-- [SPRINT_PLAN.md](SPRINT_PLAN.md) — hackathon sprint tasks, priorities, status
+- [wiki/decisions/README.md](wiki/decisions/README.md) — architectural decisions and contract proposals

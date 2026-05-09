@@ -1,5 +1,9 @@
 # SmartTruck Wiki Log
 
+## [2026-05-09] lint | Wiki index reconciliation
+
+Removed stale root-level entries (`DATA_SCHEMA.md`, `DATA_MODELS.md`, `ALGORITHMS.md`, `BACKEND_PLAN.md`, `SPRINT_PLAN.md` — all deleted). Updated `index.md` and `CLAUDE.md` wiki table to reflect actual `wiki/` structure.
+
 ## [2026-05-09] setup | Shared LLM Wiki Snapshot
 
 Created the shared SmartTruck wiki from the definitive plan, Karpathy LLM-wiki workflow, and `DATA_MODELS.md`.

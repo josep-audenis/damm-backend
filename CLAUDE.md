@@ -12,14 +12,16 @@ This repo uses an LLM-maintained wiki pattern. Three layers:
 
 | File | Category | Purpose |
 |------|----------|---------|
-| [index.md](index.md) | Meta | Catalog of all wiki pages |
-| [log.md](log.md) | Meta | Append-only activity log |
+| [index.md](index.md) | Meta | Root index (pointer to wiki/) |
+| [wiki/index.md](wiki/index.md) | Meta | Canonical wiki catalog |
+| [wiki/log.md](wiki/log.md) | Meta | Append-only activity log |
 | [README.md](README.md) | Overview | Project overview |
-| [DATA_SCHEMA.md](DATA_SCHEMA.md) | Data | Excel sheet schemas, column types |
-| [DATA_MODELS.md](DATA_MODELS.md) | Data | Domain model definitions |
-| [ALGORITHMS.md](ALGORITHMS.md) | Technical | VRP + bin-packing algorithm design |
-| [BACKEND_PLAN.md](BACKEND_PLAN.md) | Technical | API design and implementation plan |
-| [SPRINT_PLAN.md](SPRINT_PLAN.md) | Planning | Hackathon sprint tasks |
+| [wiki/contracts/data-models.md](wiki/contracts/data-models.md) | Contracts | Domain, request/response, WebSocket schemas |
+| [wiki/contracts/api-contract.md](wiki/contracts/api-contract.md) | Contracts | Endpoint paths and payload shapes |
+| [wiki/contracts/separation-of-concerns.md](wiki/contracts/separation-of-concerns.md) | Contracts | Frontend/backend ownership boundaries |
+| [wiki/backend/agent-instructions.md](wiki/backend/agent-instructions.md) | Technical | Backend implementation rules |
+| [wiki/frontend/agent-instructions.md](wiki/frontend/agent-instructions.md) | Technical | Frontend implementation rules |
+| [wiki/decisions/README.md](wiki/decisions/README.md) | Planning | Architectural decisions |
 
 ### Conventions
 
