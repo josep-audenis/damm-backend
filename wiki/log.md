@@ -1,5 +1,9 @@
 # SmartTruck Wiki Log
 
+## [2026-05-10] update | Per-customer pallet packing (Proposal A)
+
+Replaced the shared-pallet bin-packing in `services/optimization.py` with one or more dedicated pallets per customer. Each stop now opens `ceil(box_units / PALLET_CAPACITY_UNITS)` pallets, products are distributed across the customer's pallets sequentially (splitting a product line only when its quantity exceeds the current pallet's remaining capacity), and pallets are still created in reverse delivery order so LIFO loading is preserved. `stop_pallet_demand` now returns an integer pallet count (as `float`) so OR-Tools sees the true capacity cost of each customer. The pick list is sorted by `(pallet_id, warehouse_location, material_code)` and the static demo groups pick rows under per-pallet headers. Three pre-existing test failures in `test_optimization.py` and `test_jobs_ws.py` remain (already failing on `main`), unrelated to this change.
+
 ## [2026-05-09] update | CSV order import switched to id-based schema
 
 Replaced the name/description matching in `POST /api/v1/data/orders/import` with strict UUID lookups. The CSV now requires the `orders` table's own column names: `customer_id`, `material_id`, `quantity`, `sales_unit` (plus optional `due_date`). Regenerated `data/sample_orders.csv` with UUIDs from the seeded DB and updated the tests, static demo hint, README, and API contract accordingly.

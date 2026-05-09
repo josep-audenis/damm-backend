@@ -269,16 +269,60 @@ function renderTruck(load, viz) {
     const tile = document.createElement("div");
     tile.className = "pallet-tile";
     tile.style.background = pallet.color;
-    tile.title = `${pallet.pallet_id} | ${pallet.label}`;
-    tile.innerHTML = `<span>${pallet.pallet_id}</span><small>${pallet.label}</small>`;
+
+    const idEl = document.createElement("span");
+    idEl.textContent = pallet.pallet_id;
+    const labelEl = document.createElement("small");
+    labelEl.textContent = pallet.label;
+    tile.append(idEl, labelEl);
+
+    const summary = pallet.products_summary || [];
+    if (summary.length > 0) {
+      const list = document.createElement("ul");
+      list.className = "pallet-contents";
+      const max = 4;
+      for (const line of summary.slice(0, max)) {
+        const li = document.createElement("li");
+        li.textContent = line;
+        list.append(li);
+      }
+      if (summary.length > max) {
+        const more = document.createElement("li");
+        more.className = "more";
+        more.textContent = `+${summary.length - max} more`;
+        list.append(more);
+      }
+      tile.append(list);
+      tile.title = `${pallet.pallet_id} | ${pallet.label}\n${summary.join("\n")}`;
+    } else {
+      tile.title = `${pallet.pallet_id} | ${pallet.label}`;
+    }
+
     elements.truckViz.append(tile);
   }
 
-  for (const item of (load?.pick_list || []).slice(0, 30)) {
-    const row = document.createElement("div");
-    row.className = "pick-item";
-    row.innerHTML = `<strong>${item.sequence}</strong><span>${item.warehouse_location} | ${item.quantity} ${item.unit} | ${item.description}</span>`;
-    elements.pickList.append(row);
+  const groupedByPallet = new Map();
+  for (const item of load?.pick_list || []) {
+    if (!groupedByPallet.has(item.pallet_id)) {
+      groupedByPallet.set(item.pallet_id, []);
+    }
+    groupedByPallet.get(item.pallet_id).push(item);
+  }
+  let printed = 0;
+  for (const [palletId, items] of groupedByPallet) {
+    if (printed >= 30) break;
+    const header = document.createElement("div");
+    header.className = "pick-pallet-header";
+    header.textContent = palletId;
+    elements.pickList.append(header);
+    for (const item of items) {
+      if (printed >= 30) break;
+      const row = document.createElement("div");
+      row.className = "pick-item";
+      row.innerHTML = `<strong>${item.sequence}</strong><span>${item.warehouse_location} | ${item.quantity} ${item.unit} | ${item.description}</span>`;
+      elements.pickList.append(row);
+      printed += 1;
+    }
   }
 }
 
@@ -294,6 +338,7 @@ function buildVizForLoad(load, route) {
       label: names[pallet.stop_ids?.[0]] || pallet.pallet_id,
       color: colors[index % colors.length],
       stop_ids: pallet.stop_ids || [],
+      products_summary: pallet.products_summary || [],
     })),
   };
 }

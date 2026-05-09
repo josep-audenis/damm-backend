@@ -126,6 +126,7 @@ class Pallet(BaseModel):
     stop_ids: list[str] = Field(default_factory=list)
     is_returnables: bool = False
     items: list[PalletItem] = Field(default_factory=list)
+    products_summary: list[str] = Field(default_factory=list)
     total_height_cm: float = 0.0
     total_weight_kg: float = 0.0
     total_volume_l: float = 0.0
