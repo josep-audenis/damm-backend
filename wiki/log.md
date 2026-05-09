@@ -1,5 +1,9 @@
 # SmartTruck Wiki Log
 
+## [2026-05-09] query | Project context and implementation overview
+
+Reviewed the wiki contracts and backend implementation to summarize the Damm Smart Truck project, including FastAPI routing, JSON database storage, domain assembly, optimization flow, WebSocket jobs, static demo UI, and test coverage.
+
 ## [2026-05-09] update | Add order delivery flag and exact geocoding
 
 Added `orders.delivered_flag` with default `false` for existing and bootstrapped orders. Recomputed coordinates for the 200-customer demo database using exact address queries only, with fallback geocoding disabled; 83 customers and 619 related delivery stops now have coordinates.
@@ -27,7 +31,7 @@ Processed and integrated five root-level markdown files into the wiki structure:
 - `ALGORITHMS.md` → `wiki/technical/algorithms.md` (route CVRPTW, bin-packing, warehouse pick optimization)
 - `BACKEND_PLAN.md` → `wiki/technical/architecture.md` (tech stack, API design, data pipeline, phases)
 - `DATA_MODELS.md` → Enhanced `wiki/contracts/data-models.md` with comprehensive Pydantic schemas
-- `DATA_SCHEMA.md` → `wiki/data/schema.md` (field glossary, data relationships, sample queries)
+- `DATA_SCHEMA.md` → removed after the app moved to the DB-only runtime schema
 - `SPRINT_PLAN.md` → `wiki/planning/sprint-plan.md` (24h timeline, risk mitigation, MVP definition)
 
 Updated `wiki/index.md` with new sections: Technical, Data, Planning.

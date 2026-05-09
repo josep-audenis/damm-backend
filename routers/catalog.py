@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 
 from models.catalog import (
-    BootstrapResponse,
     CustomerCreate,
     CustomerRead,
     GeocodeBatchResponse,
@@ -19,11 +18,6 @@ from services.geocoding import geocode_location
 
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
-
-
-@router.post("/bootstrap", response_model=BootstrapResponse)
-def bootstrap_catalog() -> BootstrapResponse:
-    return BootstrapResponse(counts=db_service.bootstrap_from_excels())
 
 
 @router.get("/warehouses", response_model=list[WarehouseRead])

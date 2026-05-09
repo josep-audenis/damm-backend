@@ -9,11 +9,10 @@
 ## Technical
 
 - [Algorithms](technical/algorithms.md): route optimization (CVRPTW), bin-packing, warehouse picking logic.
-- [Architecture](technical/architecture.md): tech stack, API design, data pipeline, implementation priorities.
+- [Architecture](technical/architecture.md): tech stack, API design, DB-backed API flow, implementation priorities.
 
 ## Data
 
-- [Schema](data/schema.md): field glossary, source files, relationships, and sample queries.
 - [DB Schema](data/db-schema.md): app_db.json table definitions, fields, types, FK relationships, and row counts.
 
 ## Planning

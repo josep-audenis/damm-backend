@@ -8,7 +8,7 @@ The JSON database stored several source identifiers and unused fields that are n
 
 ## Decision
 
-Use the integer `id` as the stored identity for customers, drivers, material types, materials, transports, and trucks. Keep source workbook identifiers only as in-memory bootstrap keys while building relationships.
+Use the stored UUID `id` as the identity for customers, drivers, material types, materials, transports, and trucks. Source workbook identifiers are no longer persisted or required at runtime.
 
 Remove:
 
@@ -43,7 +43,7 @@ Remove:
 
 Truck rows now store only `id`, `plate`, `capacity_pallets`, and `warehouse_id`.
 
-Add `orders` as the owner of ordered material quantities. Order rows store `id`, `customer_id`, `due_date`, `material_id`, `quantity`, and `sales_unit`. Delivery lines now only assign an order to a delivery stop with `delivery_stop_id` and `order_id`.
+Add `orders` as the owner of ordered material quantities. Order rows store `id`, `customer_id`, `due_date`, `material_id`, `quantity`, `sales_unit`, and `delivered_flag`. Delivery lines now only assign an order to a delivery stop with `delivery_stop_id` and `order_id`.
 
 ## Frontend Impact
 
@@ -51,8 +51,8 @@ Catalog screens and clients should not expect the removed fields from `/api/v1/c
 
 ## Backend Impact
 
-Excel bootstrap uses temporary source-code maps to deduplicate rows and connect foreign keys, then writes only the simplified fields to `data/app_db.json`. Existing delivery-line quantity data migrates into `orders`.
+`data/app_db.json` is the runtime source of truth. The API no longer reads raw Excel workbooks or exposes a bootstrap endpoint.
 
 ## Migration Notes
 
-`DatabaseService.init_db()` removes obsolete tables and fields from existing JSON databases. During migration, each old delivery line gets a matching order before the old line fields are stripped. Full Excel bootstrap rebuilds Excel-derived tables before importing so deleted source keys are not required for future upserts.
+`DatabaseService.init_db()` removes obsolete tables and fields from existing JSON databases. During migration, each old delivery line gets a matching order before the old line fields are stripped.

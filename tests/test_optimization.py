@@ -61,19 +61,24 @@ def test_group_stops_by_customer_merges_products_and_albarans() -> None:
 
 
 def test_optimize_preview_uses_real_transport_and_groups_client_orders() -> None:
+    transport = next(
+        item for item in client.get("/api/v1/data/transports").json()
+        if item["stop_count"] > 0
+    )
     response = client.post(
         "/api/v1/optimize/full/preview",
-        json={"transport_id": "11515121", "truck_type": "6pal", "solver_time_limit_s": 5},
+        json={"transport_id": transport["transport_id"], "truck_type": "8pal", "solver_time_limit_s": 5},
     )
 
     assert response.status_code == 200
     payload = response.json()["result"]
     assert payload["status"] == "done"
-    assert payload["route"]["transport_id"] == "11515121"
-    assert payload["route"]["total_stops"] <= 32
+    assert payload["route"]["transport_id"] == transport["transport_id"]
+    assert payload["route"]["total_stops"] <= transport["stop_count"]
     assert "orders grouped by customer" in payload["route"]["explanation"]
-    assert payload["load"]["pallet_slots_total"] == 6
-    assert payload["load"]["pick_list"]
+    assert payload["load"]["pallet_slots_total"] == 8
+    assert payload["load"]["total_units_delivery"] > 0
+    assert payload["load"]["items_no_location"]
 
 
 def test_optimize_preview_unknown_transport_returns_404() -> None:

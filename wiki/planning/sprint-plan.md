@@ -21,7 +21,7 @@
 ```bash
 mkdir backend && cd backend
 python -m venv venv && source venv/bin/activate
-pip install fastapi uvicorn pandas openpyxl ortools geopy python-dotenv
+pip install fastapi uvicorn ortools geopy python-dotenv
 ```
 
 ```python
@@ -48,26 +48,23 @@ uvicorn main:app --reload --port 8000
 
 ## Phase 1 — Data Layer (1–4h)
 
-**Goal**: Parse all Excel files, expose `/data` endpoints, geocode addresses.
+**Goal**: Read `data/app_db.json`, expose `/data` endpoints, geocode addresses.
 
-### Hour 1: Data loader
-- [ ] Create `services/data_loader.py`
-- [ ] Parse all 5 sheets of `Hackaton.xlsx` into DataFrames
-- [ ] Parse `Horarios Entrega.XLSX`
-- [ ] Parse `ZM040.XLSX` (filter to `UMA == "CAJ"` only — case-level dimensions)
-- [ ] Global `AppData` instance loaded at startup with `@app.on_event("startup")`
+### Hour 1: DB repository
+- [ ] Create `services/db_repository.py`
+- [ ] Assemble transports, stops, products, and time windows from `data/app_db.json`
+- [ ] Keep `DatabaseService.init_db()` responsible for schema normalization and migrations
 
 ### Hour 2: Domain models + data helpers
 - [ ] `models/domain.py` — Stop, Product, Truck, TimeWindow, Pallet
 - [ ] `models/schemas.py` — FastAPI request/response schemas
-- [ ] Helper functions: `get_time_window()`, `get_case_dimensions()`, `is_returnable()`, `get_warehouse_location()`
+- [ ] Helper functions: `get_time_window()`, `get_case_dimensions()`, `is_returnable()`
 - [ ] `build_transport(transport_id)` — assemble a full list of stops from the data
 
 ### Hour 3: Geocoding
 - [ ] `services/geocoding.py` — geocode with geopy Nominatim
-- [ ] Load cache from `data/processed/geocache.json` on startup
-- [ ] Batch geocode all customers in `Direcciones` sheet at startup
-- [ ] Save cache after geocoding
+- [ ] Batch geocode DB customers that have missing coordinates
+- [ ] Persist coordinates back to `data/app_db.json`
 
 > **Tip**: Nominatim rate-limits to 1 req/s. For 1,368 addresses that's ~23 min. Start geocoding at the very beginning of this phase and let it run in the background while you write other code. Alternatively, use OpenRouteService's batch geocoding endpoint.
 

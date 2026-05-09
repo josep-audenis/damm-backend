@@ -2,7 +2,7 @@
 
 This repo uses an LLM-maintained wiki pattern. Three layers:
 
-- **Raw sources** — `data/raw/` Excel files + external docs. Immutable. Never modify.
+- **Database** — `data/app_db.json` is the runtime source of truth for the demo app.
 - **Wiki** — LLM-generated `.md` files in `wiki/` directory. LLM owns and maintains.
 - **Schema** — this file (CLAUDE.md). Defines conventions and workflows for agents.
 
@@ -76,7 +76,7 @@ Do NOT put:
 
 ## When Unsure
 
-- Domain vocab → wiki/data/schema.md
+- Domain vocab → wiki/data/db-schema.md
 - Tech decisions → wiki/technical/ or wiki/decisions/
 - Data structure → wiki/contracts/
 - Timeline/scope → wiki/planning/

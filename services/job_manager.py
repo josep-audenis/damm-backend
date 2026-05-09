@@ -15,7 +15,7 @@ from models.schemas import (
     WsProgress,
     WsResult,
 )
-from services.data_loader import repository
+from services.db_repository import repository
 from services.coordinates import enrich_stops_from_local_coordinates, enrich_stops_with_geocoding
 from services.optimization import (
     apply_route,

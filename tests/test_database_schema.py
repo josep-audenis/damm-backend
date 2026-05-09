@@ -4,8 +4,6 @@ import json
 import uuid
 from pathlib import Path
 
-import pandas as pd
-
 from services.database import DatabaseService
 
 
@@ -171,124 +169,6 @@ def test_database_service_migrates_removed_tables_fields_ids_and_strings(tmp_pat
     assert stop["customer_id"] == customer["id"]
     assert order["customer_id"] == customer["id"]
     assert order["material_id"] == material["id"]
-    assert line["delivery_stop_id"] == stop["id"]
-    assert line["order_id"] == order["id"]
-
-
-def test_bootstrap_helpers_keep_source_keys_out_and_normalize_strings(tmp_path: Path) -> None:
-    service = DatabaseService(db_path=tmp_path / "app_db.json")
-    db = service._empty_db()
-
-    customer_map = service._bootstrap_customers(
-        db,
-        pd.DataFrame(
-            [
-                {
-                    "Cliente": "9100000000",
-                    "Nombre 1": "Bar One",
-                    "Nombre 2": "Bar One",
-                    "Calle": "cr sant joan 1",
-                    "CP": "08100",
-                    "Población": "Mollet",
-                },
-                {
-                    "Cliente": "9100000000",
-                    "Nombre 1": "Duplicate",
-                    "Nombre 2": "Duplicate",
-                    "Calle": "Street 2",
-                    "CP": "08100",
-                    "Población": "Mollet",
-                },
-            ]
-        ),
-        pd.DataFrame(
-            [
-                {
-                    "cliente zona": "9100000000",
-                    "ZonaTransp": "DD13100002",
-                    "Zona Entrega": "Mollet",
-                }
-            ]
-        ),
-    )
-
-    customer_id = _assert_uuid(customer_map["9100000000"])
-    assert db["tables"]["customers"] == [
-        {
-            "id": customer_id,
-            "name": "BAR ONE",
-            "name_2": "BAR ONE",
-            "address": "CARRER SANT JOAN 1",
-            "postal_code": "08100",
-            "city": "MOLLET",
-            "zone_code": "DD13100002",
-            "zone_name": "MOLLET",
-            "lat": None,
-            "lng": None,
-        }
-    ]
-
-    transport_map = service._bootstrap_drivers_routes_transports(
-        db,
-        pd.DataFrame(
-            [
-                {
-                    "Repartidor": "850000",
-                    "Destinatario mcía.": "Driver One",
-                    "Ruta": "DR0001",
-                    "Transporte": "11420379",
-                    "FECHA": "30/01/2026",
-                }
-            ]
-        ),
-    )
-
-    transport_id = _assert_uuid(transport_map["11420379"])
-    driver_id = _assert_uuid(db["tables"]["drivers"][0]["id"])
-    route_id = _assert_uuid(db["tables"]["routes"][0]["id"])
-    assert db["tables"]["drivers"] == [{"id": driver_id, "name": "DRIVER ONE"}]
-    assert db["tables"]["transports"] == [
-        {
-            "id": transport_id,
-            "transport_date": "2026-01-30",
-            "route_id": route_id,
-            "driver_id": driver_id,
-            "truck_id": None,
-        }
-    ]
-
-    service._bootstrap_delivery_stops_and_lines(
-        db,
-        pd.DataFrame(
-            [
-                {
-                    "Transporte": "11420379",
-                    "Entrega": "827937019",
-                    "FECHA": "30/01/2026",
-                    "Destinatario mcía..1": "9100000000",
-                    "Material": "ED13",
-                    "Cantidad entrega": 2,
-                    "Un.medida venta": "CAJ",
-                }
-            ]
-        ),
-        customer_map,
-        transport_map,
-        {"ED13": "material-uuid"},
-    )
-
-    order = db["tables"]["orders"][0]
-    stop = db["tables"]["delivery_stops"][0]
-    line = db["tables"]["delivery_lines"][0]
-    _assert_uuid(order["id"])
-    _assert_uuid(stop["id"])
-    _assert_uuid(line["id"])
-
-    assert order["customer_id"] == customer_id
-    assert order["material_id"] == "material-uuid"
-    assert order["sales_unit"] == "CAJ"
-    assert stop["transport_id"] == transport_id
-    assert stop["customer_id"] == customer_id
     assert line["delivery_stop_id"] == stop["id"]
     assert line["order_id"] == order["id"]
 
