@@ -80,6 +80,22 @@ class HealthResponse(BaseModel):
     geocoded_count: int
 
 
+class OrderImportRowError(BaseModel):
+    row: int
+    reason: str
+    raw: dict[str, str] = Field(default_factory=dict)
+
+
+class OrderImportResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    received: int
+    inserted: int
+    skipped: int
+    unknown_customers: list[str] = Field(default_factory=list)
+    unknown_materials: list[str] = Field(default_factory=list)
+    errors: list[OrderImportRowError] = Field(default_factory=list)
+
+
 class RoutePreviewResponse(BaseModel):
     route: RouteResult
 

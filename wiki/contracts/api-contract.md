@@ -58,6 +58,37 @@ Primary list item:
 TransportSummary
 ```
 
+### Import Orders From CSV
+
+```txt
+POST /api/v1/data/orders/import   (multipart/form-data)
+```
+
+Form fields:
+
+| Field | Type | Notes |
+|---|---|---|
+| `file` | file | CSV with header row. Required columns: `customer_name`, `qty`, `unit`. Optional columns: `material_code`, `material_name`, `due_date`, `quantity`, `sales_unit`. Delimiter `;` or `,`. |
+| `due_date` | date | Default `today`. Used when a row has no `due_date` column. |
+
+The importer is strict: rows are inserted only when both the customer (matched by uppercase `name`) and the material (matched by uppercase `description`, falling back to `material_code`) already exist in the database. Unknown customers and materials are skipped — they are never created. A sample CSV that resolves against the seeded demo DB lives at `data/sample_orders.csv`.
+
+Response model:
+
+```txt
+OrderImportResponse {
+  status: "ok",
+  received: int,
+  inserted: int,
+  skipped: int,
+  unknown_customers: list[str],
+  unknown_materials: list[str],
+  errors: list[{ row: int, reason: str, raw: dict }],
+}
+```
+
+Skip reasons: `missing_required_fields`, `invalid_quantity`, `non_positive_quantity`, `unknown_customer`, `unknown_material`. The first 200 row errors are returned.
+
 ### Start Full Optimization
 
 ```txt
