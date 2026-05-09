@@ -4,7 +4,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from routers import catalog, data, db, jobs, optimize
-from services.database import db_service
+from services.db_provider import db_service
 
 
 app = FastAPI(

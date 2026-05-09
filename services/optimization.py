@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC
+from datetime import date as DateType
 from datetime import datetime, time
 from math import atan2, ceil, cos, radians, sin, sqrt
 from uuid import uuid4
@@ -12,8 +13,10 @@ from models.domain import (
     OptimizationResult,
     Pallet,
     PickInstruction,
+    ProductCategory,
     ProductDimensions,
     ProductLine,
+    ProductUnit,
     RouteResult,
     TruckType,
     TruckVisualization,
@@ -21,6 +24,7 @@ from models.domain import (
 )
 from models.schemas import OptimizeRequest, TransportDetail
 from services.coordinates import enrich_stops_from_local_coordinates
+from services.db_provider import db_service
 
 
 DEPOT_LAT = 41.5409
@@ -63,9 +67,341 @@ class OptimizationService:
             created_at=now,
             completed_at=now,
             route=route,
+            routes=[route],
             load=load,
+            loads=[load],
             viz=viz,
         )
+
+    def optimize_orders(self, request: OptimizeRequest, job_id: str | None = None) -> OptimizationResult:
+        plan = build_order_plan(request)
+        matrix = build_distance_time_matrix(plan.stops)
+        route_indices_by_vehicle, solver_name = solve_multi_vehicle_route(
+            plan.stops,
+            matrix,
+            plan.truck_capacities,
+            request.respect_time_windows,
+            request.solver_time_limit_s,
+        )
+        routes: list[RouteResult] = []
+        loads: list[LoadPlan] = []
+        generated_transport_ids: list[str] = []
+        for vehicle_index, route_indices in enumerate(route_indices_by_vehicle):
+            if len(route_indices) <= 2:
+                continue
+            truck = plan.trucks[vehicle_index]
+            ordered_stops = apply_route(plan.stops, route_indices)
+            transport = TransportDetail(
+                transport_id=f"planned-{job_id or uuid4().hex[:8]}-{vehicle_index + 1}",
+                route_code=f"OPT-{vehicle_index + 1:02d}",
+                driver_id="",
+                driver_name=truck.get("plate") or f"Truck {vehicle_index + 1}",
+                date=request.date or plan.date,
+                truck_type=truck_type_from_capacity(plan.truck_capacities[vehicle_index]),
+                stops=ordered_stops,
+            )
+            route = build_route_result(transport, request, ordered_stops, route_indices, matrix, solver_name)
+            route.explanation = (
+                f"{solver_name}; multi-vehicle CVRPTW; open orders grouped by customer; "
+                "generated routes/transports from optimization"
+            )
+            load = build_load_plan(transport, request, ordered_stops)
+            routes.append(route)
+            loads.append(load)
+            if request.persist_plan:
+                generated_transport_ids.append(persist_generated_route(plan, truck, route, ordered_stops))
+
+        now = datetime.now(UTC)
+        status_id = ",".join(generated_transport_ids) if generated_transport_ids else "planned"
+        return OptimizationResult(
+            job_id=job_id or uuid4().hex[:8],
+            transport_id=status_id,
+            status="done",
+            created_at=now,
+            completed_at=now,
+            route=routes[0] if routes else None,
+            routes=routes,
+            load=loads[0] if loads else None,
+            loads=loads,
+            viz=build_truck_visualization(loads[0], routes[0].ordered_stops) if routes and loads else None,
+        )
+
+
+@dataclass(frozen=True)
+class OrderPlan:
+    date: DateType
+    warehouse: dict
+    trucks: list[dict]
+    truck_capacities: list[int]
+    stops: list[DeliveryStop]
+    order_ids_by_stop_id: dict[str, list[str]]
+
+
+def build_order_plan(request: OptimizeRequest) -> OrderPlan:
+    warehouses = db_service.list_rows("warehouses", limit=10000)
+    warehouse = (
+        next((row for row in warehouses if row.get("id") == request.warehouse_id), None)
+        if request.warehouse_id
+        else (warehouses[0] if warehouses else {})
+    )
+    trucks = db_service.list_rows("trucks", limit=10000)
+    if request.truck_ids:
+        truck_id_set = set(request.truck_ids)
+        trucks = [truck for truck in trucks if truck.get("id") in truck_id_set]
+    if not trucks:
+        trucks = [{"id": None, "plate": "virtual-6pal", "capacity_pallets": PALLET_SLOT_BY_TRUCK[TruckType.TRUCK_6]}]
+
+    customers = {row["id"]: row for row in db_service.list_rows("customers", limit=1000000)}
+    materials = {row["id"]: row for row in db_service.list_rows("materials", limit=1000000)}
+    dimensions = material_dimensions_by_material()
+    windows = customer_windows_by_customer()
+    orders = [
+        row
+        for row in db_service.list_rows("orders", limit=1000000)
+        if not row.get("delivered_flag") and (request.date is None or row.get("due_date") == request.date.isoformat())
+    ][: request.max_orders]
+    if not orders:
+        raise ValueError("No open orders match optimization request")
+
+    by_customer: dict[str, list[dict]] = {}
+    for order in orders:
+        by_customer.setdefault(order["customer_id"], []).append(order)
+
+    weekday = (request.date or DateType.today()).isoweekday()
+    stops: list[DeliveryStop] = []
+    order_ids_by_stop_id: dict[str, list[str]] = {}
+    for sequence, (customer_id, customer_orders) in enumerate(by_customer.items(), start=1):
+        customer = customers.get(customer_id)
+        if customer is None:
+            continue
+        products = [product_line_from_order(order, materials, dimensions) for order in customer_orders]
+        time_window = windows.get((customer_id, weekday))
+        stop_id = f"plan-{customer_id}"
+        order_ids_by_stop_id[stop_id] = [order["id"] for order in customer_orders]
+        stops.append(
+            DeliveryStop(
+                stop_id=stop_id,
+                sequence=sequence,
+                customer_id=customer_id,
+                customer_name=customer.get("name") or customer_id,
+                address=customer.get("address") or "",
+                postal_code=str(customer.get("postal_code") or ""),
+                city=customer.get("city") or "",
+                lat=customer.get("lat"),
+                lng=customer.get("lng"),
+                time_window=time_window,
+                products=products,
+                albaran_numbers=[order["id"] for order in customer_orders],
+            )
+        )
+
+    if not stops:
+        raise ValueError("Open orders do not reference known customers")
+    capacities = [int(truck.get("capacity_pallets") or PALLET_SLOT_BY_TRUCK[TruckType.TRUCK_6]) for truck in trucks]
+    return OrderPlan(
+        date=request.date or DateType.today(),
+        warehouse=warehouse,
+        trucks=trucks,
+        truck_capacities=capacities,
+        stops=enrich_stops_from_local_coordinates(stops),
+        order_ids_by_stop_id=order_ids_by_stop_id,
+    )
+
+
+def product_line_from_order(order: dict, materials: dict[str, dict], dimensions: dict[str, ProductDimensions]) -> ProductLine:
+    material = materials.get(order.get("material_id"), {})
+    try:
+        unit = ProductUnit(str(order.get("sales_unit") or "UN"))
+    except ValueError:
+        unit = ProductUnit.UN
+    return ProductLine(
+        material_code=str(order.get("material_id")),
+        description=material.get("description") or str(order.get("material_id")),
+        quantity=int(float(order.get("quantity") or 0)),
+        unit=unit,
+        category=ProductCategory.FOOD,
+        is_returnable=bool(material.get("is_returnable")),
+        dimensions=dimensions.get(order.get("material_id")) or ProductDimensions(),
+    )
+
+
+def material_dimensions_by_material() -> dict[str, ProductDimensions]:
+    output = {}
+    for row in db_service.list_rows("material_dimensions", limit=1000000):
+        material_id = row.get("material_id")
+        if material_id in output:
+            continue
+        output[material_id] = ProductDimensions(
+            length_cm=float(row.get("length_cm") or 40.0),
+            width_cm=float(row.get("width_cm") or 30.0),
+            height_cm=float(row.get("height_cm") or 25.0),
+            volume_l=row.get("volume_l"),
+            weight_gross_kg=float(row.get("weight_gross_kg") or 15.0),
+            weight_net_kg=row.get("weight_net_kg"),
+        )
+    return output
+
+
+def customer_windows_by_customer() -> dict[tuple[str, int], object]:
+    from models.domain import TimeWindow
+
+    output = {}
+    for row in db_service.list_rows("customer_time_windows", limit=1000000):
+        open_time = row.get("open_time")
+        close_time = row.get("close_time")
+        if not open_time or not close_time:
+            continue
+        output[(row["customer_id"], int(row.get("weekday") or 0))] = TimeWindow(
+            open=time.fromisoformat(open_time),
+            close=time.fromisoformat(close_time),
+        )
+    return output
+
+
+def solve_multi_vehicle_route(
+    stops: list[DeliveryStop],
+    matrix: Matrix,
+    truck_capacities: list[int],
+    respect_time_windows: bool,
+    time_limit_s: int,
+) -> tuple[list[list[int]], str]:
+    ortools_routes = solve_multi_with_ortools(stops, matrix, truck_capacities, respect_time_windows, time_limit_s)
+    if ortools_routes is not None:
+        return ortools_routes, "or-tools"
+    return greedy_multi_vehicle_routes(stops, matrix, truck_capacities), "greedy-multi-vehicle-2opt"
+
+
+def solve_multi_with_ortools(
+    stops: list[DeliveryStop],
+    matrix: Matrix,
+    truck_capacities: list[int],
+    respect_time_windows: bool,
+    time_limit_s: int,
+) -> list[list[int]] | None:
+    try:
+        from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+    except ImportError:
+        return None
+
+    vehicle_count = len(truck_capacities)
+    manager = pywrapcp.RoutingIndexManager(len(stops) + 1, vehicle_count, 0)
+    routing = pywrapcp.RoutingModel(manager)
+
+    def time_callback(from_idx: int, to_idx: int) -> int:
+        return matrix.time_min[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
+
+    transit_idx = routing.RegisterTransitCallback(time_callback)
+    routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
+
+    if respect_time_windows:
+        routing.AddDimension(transit_idx, 30, 12 * 60, True, "Time")
+        time_dim = routing.GetDimensionOrDie("Time")
+        for position, stop in enumerate(stops, start=1):
+            if stop.time_window is None:
+                continue
+            time_dim.CumulVar(manager.NodeToIndex(position)).SetRange(
+                minutes_since_midnight(stop.time_window.open),
+                minutes_since_midnight(stop.time_window.close),
+            )
+
+    def demand_callback(index: int) -> int:
+        node = manager.IndexToNode(index)
+        return 0 if node == 0 else int(ceil(stop_pallet_demand(stops[node - 1]) * 100))
+
+    demand_idx = routing.RegisterUnaryTransitCallback(demand_callback)
+    routing.AddDimensionWithVehicleCapacity(
+        demand_idx,
+        0,
+        [capacity * 100 for capacity in truck_capacities],
+        True,
+        "Capacity",
+    )
+
+    search_params = pywrapcp.DefaultRoutingSearchParameters()
+    search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+    search_params.time_limit.seconds = time_limit_s
+    solution = routing.SolveWithParameters(search_params)
+    if solution is None:
+        return None
+
+    routes = []
+    for vehicle_index in range(vehicle_count):
+        route = []
+        index = routing.Start(vehicle_index)
+        while not routing.IsEnd(index):
+            route.append(manager.IndexToNode(index))
+            index = solution.Value(routing.NextVar(index))
+        route.append(manager.IndexToNode(index))
+        routes.append(route)
+    return routes
+
+
+def greedy_multi_vehicle_routes(stops: list[DeliveryStop], matrix: Matrix, truck_capacities: list[int]) -> list[list[int]]:
+    unvisited = set(range(1, len(stops) + 1))
+    routes = []
+    for capacity in truck_capacities:
+        route = [0]
+        current = 0
+        used = 0.0
+        while unvisited:
+            feasible = [
+                node
+                for node in unvisited
+                if used + stop_pallet_demand(stops[node - 1]) <= capacity
+            ]
+            if not feasible:
+                break
+            next_node = min(feasible, key=lambda node: matrix.time_min[current][node])
+            route.append(next_node)
+            unvisited.remove(next_node)
+            used += stop_pallet_demand(stops[next_node - 1])
+            current = next_node
+        route.append(0)
+        routes.append(two_opt_improve(route, matrix.time_min))
+    if unvisited:
+        raise ValueError(f"{len(unvisited)} customer stops do not fit available truck capacity")
+    return routes
+
+
+def truck_type_from_capacity(capacity: int) -> TruckType:
+    if capacity <= 2:
+        return TruckType.VAN
+    if capacity >= 8:
+        return TruckType.TRUCK_8
+    return TruckType.TRUCK_6
+
+
+def persist_generated_route(plan: OrderPlan, truck: dict, route: RouteResult, ordered_stops: list[DeliveryStop]) -> str:
+    transport = db_service.insert_row(
+        "transports",
+        {
+            "transport_date": route.date.isoformat(),
+            "route_id": None,
+            "driver_id": None,
+            "truck_id": truck.get("id"),
+        },
+    )
+    for stop in ordered_stops:
+        stop_row = db_service.insert_row(
+            "delivery_stops",
+            {
+                "transport_id": transport["id"],
+                "customer_id": stop.customer_id,
+                "sequence": stop.sequence,
+                "lat": stop.lat,
+                "lng": stop.lng,
+            },
+        )
+        for order_id in plan.order_ids_by_stop_id.get(stop.stop_id, []):
+            db_service.insert_row(
+                "delivery_lines",
+                {
+                    "delivery_stop_id": stop_row["id"],
+                    "order_id": order_id,
+                },
+            )
+    return str(transport["id"])
 
 
 def group_stops_by_customer(stops: list[DeliveryStop]) -> list[DeliveryStop]:
@@ -248,7 +584,7 @@ def build_route_result(
         route_code=transport.route_code,
         driver_id=transport.driver_id,
         driver_name=transport.driver_name,
-        truck_type=request.truck_type,
+        truck_type=transport.truck_type,
         date=request.date or transport.date,
         ordered_stops=ordered_stops,
         total_distance_km=round(total_distance, 2),

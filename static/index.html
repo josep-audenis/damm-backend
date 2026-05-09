@@ -13,28 +13,28 @@
         <div>
           <p class="eyebrow">Optimization demo</p>
           <h1>Damm DB Manager</h1>
-          <p class="muted">Run transport optimization, watch WebSocket progress, inspect generated route and load.</p>
+          <p class="muted">Plan open orders across available trucks, watch WebSocket progress, inspect generated routes and loads.</p>
         </div>
 
         <section class="side-card">
           <label>
-            Transport
-            <select id="transportSelect"></select>
+            Due date
+            <input id="planDate" type="date" value="2026-01-30" />
           </label>
           <label>
-            Truck
-            <select id="truckType">
-              <option value="6pal">6 pallets</option>
-              <option value="8pal">8 pallets</option>
-              <option value="van">Van</option>
-            </select>
+            Max orders
+            <input id="maxOrders" type="text" inputmode="numeric" value="250" />
           </label>
           <label class="checkbox-row">
             <input id="respectWindows" type="checkbox" checked />
             <span>Respect windows</span>
           </label>
+          <label class="checkbox-row">
+            <input id="persistPlan" type="checkbox" checked />
+            <span>Create transports</span>
+          </label>
           <button id="runOptimization" class="button primary">Run optimization</button>
-          <p id="optStatus" class="status">Loading transports.</p>
+          <p id="optStatus" class="status">Ready.</p>
         </section>
 
         <button id="refreshTables" class="button primary">Refresh tables</button>
@@ -75,9 +75,13 @@
             </div>
             <div class="kpi-grid">
               <div>
-                <span>Total stops</span>
-                <strong id="kpiStops">-</strong>
-              </div>
+              <span>Routes</span>
+              <strong id="kpiRoutes">-</strong>
+            </div>
+            <div>
+              <span>Stops</span>
+              <strong id="kpiStops">-</strong>
+            </div>
               <div>
                 <span>Distance</span>
                 <strong id="kpiDistance">-</strong>
@@ -118,7 +122,7 @@
 
         <section class="panel schema-panel">
           <div class="panel-heading">
-            <h3>Schema from local JSON</h3>
+            <h3>Database schema</h3>
             <span id="rowCount" class="pill">0 rows</span>
           </div>
           <div id="schemaFields" class="schema-fields"></div>

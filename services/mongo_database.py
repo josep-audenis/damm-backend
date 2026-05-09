@@ -32,6 +32,7 @@ TABLES = [
     "drivers",
     "routes",
     "trucks",
+    "orders",
     "transports",
     "delivery_stops",
     "delivery_lines",
@@ -60,14 +61,10 @@ class MongoDatabaseService:
     def _col(self, table: str) -> Collection:
         return self._db[table]
 
-    def _next_id(self, table: str) -> int:
-        result = self._db[_COUNTERS_COLLECTION].find_one_and_update(
-            {"_id": table},
-            {"$inc": {"seq": 1}},
-            upsert=True,
-            return_document=True,
-        )
-        return int(result["seq"])
+    def _next_id(self, table: str) -> str:
+        import uuid
+
+        return str(uuid.uuid4())
 
     def _strip_mongo(self, doc: dict[str, Any] | None) -> dict[str, Any] | None:
         if doc is None:
