@@ -678,6 +678,15 @@ class DatabaseService:
                 return deleted
         return None
 
+    def clear_table(self, table: str) -> int:
+        db = self._load()
+        self._ensure_table(db, table)
+        deleted = len(db["tables"][table])
+        db["tables"][table] = []
+        db["seq"][table] = 0
+        self._save(db)
+        return deleted
+
     def update_rows_by_field(self, table: str, field: str, value: Any, payload: dict[str, Any]) -> int:
         db = self._load()
         self._ensure_table(db, table)
