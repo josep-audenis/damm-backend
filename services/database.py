@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -42,6 +44,49 @@ BOOTSTRAP_TABLES = [
     "delivery_stops",
     "delivery_lines",
 ]
+FK_FIELDS_BY_TABLE = {
+    "material_dimensions": ["material_id"],
+    "customer_time_windows": ["customer_id"],
+    "trucks": ["warehouse_id"],
+    "transports": ["route_id", "driver_id", "truck_id"],
+    "delivery_stops": ["transport_id", "customer_id"],
+    "orders": ["customer_id", "material_id"],
+    "delivery_lines": ["delivery_stop_id", "order_id"],
+    "materials": ["material_type_id"],
+}
+FK_TARGET_TABLES = {
+    "warehouse_id": "warehouses",
+    "material_type_id": "material_types",
+    "material_id": "materials",
+    "customer_id": "customers",
+    "driver_id": "drivers",
+    "route_id": "routes",
+    "truck_id": "trucks",
+    "transport_id": "transports",
+    "delivery_stop_id": "delivery_stops",
+    "order_id": "orders",
+}
+TEXT_FIELDS = {"name", "name_2", "description", "city", "zone_name", "plate"}
+ADDRESS_FIELDS = {"address"}
+STREET_PREFIXES = {
+    "CALLE": "CARRER",
+    "C/": "CARRER",
+    "C": "CARRER",
+    "C.": "CARRER",
+    "CL": "CARRER",
+    "CR": "CARRER",
+    "AV": "AVINGUDA",
+    "AV.": "AVINGUDA",
+    "AVDA": "AVINGUDA",
+    "AVDA.": "AVINGUDA",
+    "AVENIDA": "AVINGUDA",
+    "PZ": "PLAÇA",
+    "PZ.": "PLAÇA",
+    "PLZ": "PLAÇA",
+    "PLZ.": "PLAÇA",
+    "PLAZA": "PLAÇA",
+    "PLAÇA": "PLAÇA",
+}
 MATERIAL_TYPE_SEEDS = [
     ("beer_bottle", "Beer Bottle", "Returnable or non-returnable bottled beer"),
     ("beer_barrel", "Beer Barrel", "Keg or barrel"),
@@ -80,7 +125,6 @@ class DatabaseService:
     def _empty_db(self) -> dict[str, Any]:
         return {
             "meta": {"generated_at": datetime.now(UTC).isoformat()},
-            "seq": {table: 0 for table in TABLES},
             "tables": {table: [] for table in TABLES},
         }
 
@@ -98,10 +142,9 @@ class DatabaseService:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    def _next_id(self, db: dict[str, Any], table: str) -> int:
+    def _next_id(self, db: dict[str, Any], table: str) -> str:
         self._ensure_table(db, table)
-        db["seq"][table] += 1
-        return int(db["seq"][table])
+        return str(uuid.uuid4())
 
     def _find_by(self, rows: list[dict[str, Any]], key: str, value: Any) -> dict[str, Any] | None:
         return next((row for row in rows if row.get(key) == value), None)
@@ -114,34 +157,23 @@ class DatabaseService:
         if not isinstance(db.get("tables"), dict):
             db["tables"] = {}
             changed = True
-        if not isinstance(db.get("seq"), dict):
-            db["seq"] = {}
-            changed = True
         for table in OBSOLETE_TABLES:
             if table in db["tables"]:
                 del db["tables"][table]
-                changed = True
-            if table in db["seq"]:
-                del db["seq"][table]
                 changed = True
         for table in TABLES:
             changed = self._ensure_table(db, table) or changed
         for table in list(db["tables"]):
             changed = self._ensure_table(db, table) or changed
+        if "seq" in db:
+            del db["seq"]
+            changed = True
         return changed
 
     def _ensure_table(self, db: dict[str, Any], table: str) -> bool:
         changed = False
         if table not in db["tables"] or not isinstance(db["tables"][table], list):
             db["tables"][table] = []
-            changed = True
-        max_id = max(
-            (int(row["id"]) for row in db["tables"][table] if isinstance(row, dict) and isinstance(row.get("id"), int)),
-            default=0,
-        )
-        current_seq = db["seq"].get(table)
-        if not isinstance(current_seq, int) or current_seq < max_id:
-            db["seq"][table] = max_id
             changed = True
         return changed
 
@@ -194,11 +226,68 @@ class DatabaseService:
             if "delivered_flag" not in row:
                 row["delivered_flag"] = False
                 changed = True
+        if self._migrate_int_ids_to_uuids(db):
+            changed = True
+        if self._normalize_string_values(db):
+            changed = True
         return changed
 
+    def _migrate_int_ids_to_uuids(self, db: dict[str, Any]) -> bool:
+        id_map: dict[str, dict[int, str]] = {}
+        changed = False
+        for table, rows in db["tables"].items():
+            table_map: dict[int, str] = {}
+            for row in rows:
+                if not isinstance(row, dict) or not isinstance(row.get("id"), int):
+                    continue
+                old_id = row["id"]
+                new_id = self._next_id(db, table)
+                row["id"] = new_id
+                table_map[old_id] = new_id
+                changed = True
+            if table_map:
+                id_map[table] = table_map
+
+        for table, fields in FK_FIELDS_BY_TABLE.items():
+            for row in db["tables"].get(table, []):
+                if not isinstance(row, dict):
+                    continue
+                for field in fields:
+                    value = row.get(field)
+                    if not isinstance(value, int):
+                        continue
+                    target_table = FK_TARGET_TABLES[field]
+                    mapped = id_map.get(target_table, {}).get(value)
+                    if mapped is not None:
+                        row[field] = mapped
+                        changed = True
+        return changed
+
+    def _normalize_string_values(self, db: dict[str, Any]) -> bool:
+        changed = False
+        for rows in db["tables"].values():
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                normalized = self._normalize_payload(row)
+                for key, value in normalized.items():
+                    if row.get(key) != value:
+                        row[key] = value
+                        changed = True
+        return changed
+
+    def _normalize_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(payload)
+        for key, value in payload.items():
+            if key in ADDRESS_FIELDS:
+                normalized[key] = _normalize_address(value)
+            elif key in TEXT_FIELDS:
+                normalized[key] = _normalize_human_text(value)
+        return normalized
+
     def _dedupe_warehouses(self, db: dict[str, Any]) -> bool:
-        seen: dict[str, int] = {}
-        remap: dict[int, int] = {}
+        seen: dict[str, Any] = {}
+        remap: dict[Any, Any] = {}
         unique_rows: list[dict[str, Any]] = []
         changed = False
 
@@ -208,20 +297,14 @@ class DatabaseService:
             key = str(name).strip().casefold() if name else f"id:{row_id}"
             existing_id = seen.get(key)
             if existing_id is None:
-                if isinstance(row_id, int):
-                    seen[key] = row_id
+                seen[key] = row_id
                 unique_rows.append(row)
                 continue
-            if isinstance(row_id, int):
-                remap[row_id] = existing_id
+            remap[row_id] = existing_id
             changed = True
 
         if changed:
             db["tables"]["warehouses"] = unique_rows
-            db["seq"]["warehouses"] = max(
-                (row["id"] for row in unique_rows if isinstance(row.get("id"), int)),
-                default=0,
-            )
             for table in ["trucks"]:
                 for row in db["tables"].get(table, []):
                     warehouse_id = row.get("warehouse_id")
@@ -269,40 +352,40 @@ class DatabaseService:
         rows = db["tables"][table]
         existing = self._find_by(rows, key, payload[key])
         if existing is None:
-            row = {"id": self._next_id(db, table), **payload}
+            row = {"id": self._next_id(db, table), **self._normalize_payload(payload)}
             rows.append(row)
             return row
-        existing.update({k: v for k, v in payload.items() if v is not None})
+        existing.update({k: v for k, v in self._normalize_payload(payload).items() if v is not None})
         return existing
 
     def _seed_material_types(self, db: dict[str, Any]) -> bool:
         changed = False
         for _, name, description in MATERIAL_TYPE_SEEDS:
-            row = self._find_by(db["tables"]["material_types"], "name", name)
+            payload = self._normalize_payload({"name": name, "description": description})
+            row = self._find_by(db["tables"]["material_types"], "name", payload["name"])
             if row is None:
                 db["tables"]["material_types"].append(
                     {
                         "id": self._next_id(db, "material_types"),
-                        "name": name,
-                        "description": description,
+                        **payload,
                     }
                 )
                 changed = True
-            elif row.get("description") != description:
-                row["description"] = description
+            elif row.get("description") != payload["description"]:
+                row["description"] = payload["description"]
                 changed = True
         return changed
 
     def _seed_default_warehouse(self, db: dict[str, Any]) -> bool:
         payload = {
-            "name": "DDI Mollet",
+            "name": "DDI MOLLET",
             "address": None,
             "postal_code": None,
-            "city": "Mollet del Vallès",
+            "city": "MOLLET DEL VALLÈS",
             "lat": None,
             "lng": None,
         }
-        row = self._find_by(db["tables"]["warehouses"], "name", "DDI Mollet")
+        row = self._find_by(db["tables"]["warehouses"], "name", payload["name"])
         if row is None:
             db["tables"]["warehouses"].append(
                 {
@@ -313,7 +396,7 @@ class DatabaseService:
             return True
         changed = False
         for key, value in payload.items():
-            if key not in row or row.get(key) != value:
+            if key not in row:
                 row[key] = value
                 changed = True
         return changed
@@ -321,7 +404,6 @@ class DatabaseService:
     def _reset_bootstrap_tables(self, db: dict[str, Any]) -> None:
         for table in BOOTSTRAP_TABLES:
             db["tables"][table] = []
-            db["seq"][table] = 0
         self._seed_material_types(db)
 
     def bootstrap_from_excels(self) -> dict[str, int]:
@@ -354,15 +436,15 @@ class DatabaseService:
         db: dict[str, Any],
         address_df: pd.DataFrame,
         zones_df: pd.DataFrame,
-    ) -> dict[str, int]:
-        customer_map: dict[str, int] = {}
+    ) -> dict[str, str]:
+        customer_map: dict[str, str] = {}
         zone_map: dict[str, tuple[str | None, str | None]] = {}
         for _, row in zones_df.iterrows():
             customer_code = _clean_id(row.get("cliente zona"))
             if customer_code:
                 zone_map[customer_code] = (
                     _clean_text(row.get("ZonaTransp") or row.get("ZONAS")),
-                    _clean_text(row.get("Zona Entrega") or row.get("NOMBRE ZONAS")),
+                    _normalize_human_text(row.get("Zona Entrega") or row.get("NOMBRE ZONAS")),
                 )
         for _, row in address_df.iterrows():
             customer_code = _clean_id(row["Cliente"])
@@ -371,23 +453,23 @@ class DatabaseService:
             zone_code, zone_name = zone_map.get(customer_code, (None, None))
             customer = {
                 "id": self._next_id(db, "customers"),
-                "name": _clean_text(row["Nombre 1"] or row["Nombre 2"]),
-                "name_2": _clean_text(row["Nombre 2"]),
-                "address": _clean_text(row["Calle"]),
+                "name": _normalize_human_text(row["Nombre 1"] or row["Nombre 2"]),
+                "name_2": _normalize_human_text(row["Nombre 2"]),
+                "address": _normalize_address(row["Calle"]),
                 "postal_code": _clean_id(row["CP"]),
-                "city": _clean_text(row["Población"]),
+                "city": _normalize_human_text(row["Población"]),
                 "zone_code": zone_code,
                 "zone_name": zone_name,
                 "lat": None,
                 "lng": None,
             }
             db["tables"]["customers"].append(customer)
-            customer_map[customer_code] = int(customer["id"])
+            customer_map[customer_code] = customer["id"]
         return customer_map
 
-    def _bootstrap_drivers_routes_transports(self, db: dict[str, Any], detail_df: pd.DataFrame) -> dict[str, int]:
-        driver_map: dict[str, int] = {}
-        transport_map: dict[str, int] = {}
+    def _bootstrap_drivers_routes_transports(self, db: dict[str, Any], detail_df: pd.DataFrame) -> dict[str, str]:
+        driver_map: dict[str, str] = {}
+        transport_map: dict[str, str] = {}
         for _, row in (
             detail_df[["Repartidor", "Destinatario mcía.", "Ruta", "Transporte", "FECHA"]]
             .drop_duplicates(subset=["Transporte"])
@@ -401,10 +483,10 @@ class DatabaseService:
             if driver_id is None:
                 driver = {
                     "id": self._next_id(db, "drivers"),
-                    "name": _clean_text(row["Destinatario mcía."]),
+                    "name": _normalize_human_text(row["Destinatario mcía."]),
                 }
                 db["tables"]["drivers"].append(driver)
-                driver_id = int(driver["id"])
+                driver_id = driver["id"]
                 driver_map[driver_code] = driver_id
             route = self._upsert(
                 db,
@@ -420,7 +502,7 @@ class DatabaseService:
                 "truck_id": None,
             }
             db["tables"]["transports"].append(transport)
-            transport_map[transport_code] = int(transport["id"])
+            transport_map[transport_code] = transport["id"]
         return transport_map
 
     def _bootstrap_materials(
@@ -429,8 +511,8 @@ class DatabaseService:
         detail_df: pd.DataFrame,
         locations_df: pd.DataFrame,
         dimensions_df: pd.DataFrame,
-    ) -> dict[str, int]:
-        material_map: dict[str, int] = {}
+    ) -> dict[str, str]:
+        material_map: dict[str, str] = {}
         location_lookup: dict[str, dict[str, str]] = {}
         for _, row in locations_df.iterrows():
             code = _clean_text(row["Material"])
@@ -444,7 +526,7 @@ class DatabaseService:
         material_type_map = {
             code: row["id"]
             for code, name, _ in MATERIAL_TYPE_SEEDS
-            if (row := self._find_by(db["tables"]["material_types"], "name", name)) is not None
+            if (row := self._find_by(db["tables"]["material_types"], "name", _normalize_human_text(name))) is not None
         }
         for material, description, sales_unit in (
             detail_df[["Material", "Denominación", "Un.medida venta"]]
@@ -462,13 +544,13 @@ class DatabaseService:
             location = location_lookup.get(material_code, {})
             material_row = {
                 "id": self._next_id(db, "materials"),
-                "description": description_text,
+                "description": _normalize_human_text(description_text),
                 "base_unit": location.get("base_unit") or sales_unit_text,
                 "material_type_id": material_type_map.get(category_code),
                 "is_returnable": _is_returnable(material_code, description_text),
             }
             db["tables"]["materials"].append(material_row)
-            material_map[material_code] = int(material_row["id"])
+            material_map[material_code] = material_row["id"]
             for _, dim_row in dimensions_df[dimensions_df["Material"] == material_code].iterrows():
                 unit = _clean_text(dim_row["UMA"])
                 if not unit:
@@ -513,7 +595,7 @@ class DatabaseService:
         self,
         db: dict[str, Any],
         schedule_df: pd.DataFrame,
-        customer_map: dict[str, int],
+        customer_map: dict[str, str],
     ) -> None:
         for _, row in schedule_df.iterrows():
             customer_id = customer_map.get(_clean_id(row["Deudor"]))
@@ -547,9 +629,9 @@ class DatabaseService:
         self,
         db: dict[str, Any],
         detail_df: pd.DataFrame,
-        customer_map: dict[str, int],
-        transport_map: dict[str, int],
-        material_map: dict[str, int],
+        customer_map: dict[str, str],
+        transport_map: dict[str, str],
+        material_map: dict[str, str],
     ) -> None:
         detail_df = detail_df.copy()
         detail_df["_source_order"] = range(len(detail_df))
@@ -650,7 +732,7 @@ class DatabaseService:
                 fields.setdefault(key, set()).add(type(value).__name__)
         return {key: sorted(types) for key, types in sorted(fields.items())}
 
-    def get_row(self, table: str, row_id: int) -> dict[str, Any] | None:
+    def get_row(self, table: str, row_id: str) -> dict[str, Any] | None:
         db = self._load()
         self._ensure_table(db, table)
         return self._find_by(db["tables"][table], "id", row_id)
@@ -658,22 +740,22 @@ class DatabaseService:
     def insert_row(self, table: str, payload: dict[str, Any]) -> dict[str, Any]:
         db = self._load()
         self._ensure_table(db, table)
-        row = {"id": self._next_id(db, table), **payload}
+        row = {"id": self._next_id(db, table), **self._normalize_payload(payload)}
         db["tables"][table].append(row)
         self._save(db)
         return row
 
-    def update_row(self, table: str, row_id: int, payload: dict[str, Any]) -> dict[str, Any] | None:
+    def update_row(self, table: str, row_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         db = self._load()
         self._ensure_table(db, table)
         row = self._find_by(db["tables"][table], "id", row_id)
         if row is None:
             return None
-        row.update(payload)
+        row.update(self._normalize_payload(payload))
         self._save(db)
         return row
 
-    def delete_row(self, table: str, row_id: int) -> dict[str, Any] | None:
+    def delete_row(self, table: str, row_id: str) -> dict[str, Any] | None:
         db = self._load()
         self._ensure_table(db, table)
         rows = db["tables"][table]
@@ -689,7 +771,6 @@ class DatabaseService:
         self._ensure_table(db, table)
         deleted = len(db["tables"][table])
         db["tables"][table] = []
-        db["seq"][table] = 0
         self._save(db)
         return deleted
 
@@ -699,11 +780,37 @@ class DatabaseService:
         updated = 0
         for row in db["tables"][table]:
             if row.get(field) == value:
-                row.update(payload)
+                row.update(self._normalize_payload(payload))
                 updated += 1
         if updated:
             self._save(db)
         return updated
+
+
+def _normalize_human_text(value: Any) -> Any:
+    if value is None:
+        return value
+    try:
+        if pd.isna(value):
+            return value
+    except (TypeError, ValueError):
+        pass
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    return text.upper()
+
+
+def _normalize_address(value: Any) -> Any:
+    text = _normalize_human_text(value)
+    if not isinstance(text, str) or not text:
+        return text
+    match = re.match(r"^([A-ZÀ-Ü/]+\.?)(?:\s+|$)(.*)$", text)
+    if match is None:
+        return text
+    prefix, rest = match.groups()
+    normalized_prefix = STREET_PREFIXES.get(prefix)
+    if normalized_prefix is None:
+        return text
+    return f"{normalized_prefix} {rest}".strip()
 
 
 db_service = DatabaseService()

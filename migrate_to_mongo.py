@@ -1,11 +1,13 @@
 """
-One-shot migration: app_db.json → MongoDB Atlas
+Idempotent migration: app_db.json → MongoDB Atlas
 
 Usage (from damm-backend/):
-    python migrate_to_mongo.py
+    python migrate_to_mongo.py            # skips collections that already have data
+    python migrate_to_mongo.py --force    # drops and reimports everything
 
 Reads MONGODB_URI and MONGODB_DB from .env (or environment).
-Drops and recreates each collection, then bulk-inserts all rows.
+Safe to re-run: by default any collection that already contains documents is
+left untouched and reported as skipped.
 """
 from __future__ import annotations
 
@@ -13,6 +15,8 @@ import json
 import os
 import sys
 from pathlib import Path
+
+FORCE = "--force" in sys.argv
 
 # Load .env if python-dotenv is available, otherwise fall back to manual parse
 try:
@@ -36,7 +40,7 @@ DB_PATH     = Path(__file__).parent / "data" / "app_db.json"
 if not MONGODB_URI:
     sys.exit("ERROR: MONGODB_URI not set. Add it to .env or the environment.")
 
-print(f"Connecting to MongoDB…")
+print("Connecting to MongoDB…")
 client = MongoClient(MONGODB_URI)
 db = client[MONGODB_DB]
 
@@ -44,27 +48,34 @@ print(f"Loading {DB_PATH} …")
 data = json.loads(DB_PATH.read_text(encoding="utf-8"))
 tables = data.get("tables", {})
 
+if FORCE:
+    print("--force: all collections will be dropped and reimported.\n")
+else:
+    print("Safe mode: collections with existing data will be skipped. Use --force to reimport.\n")
+
 total_inserted = 0
+total_skipped = 0
 
 for table, rows in tables.items():
+    col = db[table]
+
     if not rows:
-        print(f"  {table}: empty, skipping")
+        print(f"  {table}: empty in source, skipping")
         continue
 
-    col = db[table]
-    col.drop()                         # fresh start
-    col.insert_many(rows)              # bulk insert (no _id conflict since rows use int id)
+    existing = col.count_documents({})
+    if existing > 0 and not FORCE:
+        print(f"  {table}: already has {existing} documents — skipped")
+        total_skipped += 1
+        continue
+
+    if FORCE:
+        col.drop()
+
+    col.insert_many(rows)              # rows already carry UUID string ids
     count = col.count_documents({})
     total_inserted += count
     print(f"  {table}: {count} documents inserted")
 
-# Also sync the sequence counters so future inserts get correct IDs
-seq_col = db["_seq"]
-seq_col.drop()
-seq_data = data.get("seq", {})
-if seq_data:
-    seq_col.insert_many([{"_id": k, "seq": v} for k, v in seq_data.items()])
-    print(f"  _seq: {len(seq_data)} counters synced")
-
-print(f"\nDone. {total_inserted} total documents migrated to '{MONGODB_DB}'.")
+print(f"\nDone. {total_inserted} documents inserted, {total_skipped} collections skipped.")
 print("Verify on Atlas: https://cloud.mongodb.com")

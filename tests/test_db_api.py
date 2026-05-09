@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
 from main import app
 from routers import db as db_router
 from services.database import DatabaseService
+
+
+def _assert_uuid(value: object) -> str:
+    assert isinstance(value, str)
+    assert str(UUID(value)) == value
+    return value
 
 
 def test_dynamic_db_api_reads_schema_and_writes_rows(tmp_path: Path) -> None:
@@ -21,9 +28,11 @@ def test_dynamic_db_api_reads_schema_and_writes_rows(tmp_path: Path) -> None:
             json={"name": "api-test", "enabled": True},
         )
         assert create_response.status_code == 201
-        assert create_response.json() == {"id": 1, "name": "api-test", "enabled": True}
+        created = create_response.json()
+        row_id = _assert_uuid(created["id"])
+        assert created == {"id": row_id, "name": "API-TEST", "enabled": True}
 
-        update_response = client.patch("/api/v1/db/experiments/1", json={"score": 7})
+        update_response = client.patch(f"/api/v1/db/experiments/{row_id}", json={"score": 7})
         assert update_response.status_code == 200
         assert update_response.json()["score"] == 7
 
@@ -31,7 +40,7 @@ def test_dynamic_db_api_reads_schema_and_writes_rows(tmp_path: Path) -> None:
         assert schema_response.status_code == 200
         assert schema_response.json() == {
             "enabled": ["bool"],
-            "id": ["int"],
+            "id": ["str"],
             "name": ["str"],
             "score": ["int"],
         }

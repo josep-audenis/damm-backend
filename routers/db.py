@@ -32,7 +32,7 @@ def list_rows(table: str, limit: int = Query(default=100, ge=1, le=10000)) -> li
 
 
 @router.get("/{table}/{row_id}")
-def get_row(table: str, row_id: int) -> dict[str, Any]:
+def get_row(table: str, row_id: str) -> dict[str, Any]:
     row = db_service.get_row(table, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Row not found")
@@ -45,7 +45,7 @@ def insert_row(table: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any
 
 
 @router.patch("/{table}/{row_id}")
-def update_row(table: str, row_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def update_row(table: str, row_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     row = db_service.update_row(table, row_id, _validate_payload(payload))
     if row is None:
         raise HTTPException(status_code=404, detail="Row not found")
@@ -53,7 +53,7 @@ def update_row(table: str, row_id: int, payload: dict[str, Any] = Body(...)) -> 
 
 
 @router.delete("/{table}/{row_id}")
-def delete_row(table: str, row_id: int) -> dict[str, Any]:
+def delete_row(table: str, row_id: str) -> dict[str, Any]:
     row = db_service.delete_row(table, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Row not found")

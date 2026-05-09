@@ -4,11 +4,18 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from uuid import UUID
 
 from services.database import DatabaseService
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+
+
+def _assert_uuid(value: object) -> str:
+    assert isinstance(value, str)
+    assert str(UUID(value)) == value
+    return value
 
 
 def test_database_service_creates_dynamic_tables(tmp_path: Path) -> None:
@@ -17,12 +24,12 @@ def test_database_service_creates_dynamic_tables(tmp_path: Path) -> None:
     row = service.insert_row("experiments", {"name": "json-db", "enabled": True})
     updated = service.update_row("experiments", row["id"], {"score": 42})
 
-    assert row["id"] == 1
-    assert updated == {"id": 1, "name": "json-db", "enabled": True, "score": 42}
+    row_id = _assert_uuid(row["id"])
+    assert updated == {"id": row_id, "name": "JSON-DB", "enabled": True, "score": 42}
     assert service.list_tables()["experiments"] == 1
     assert service.describe_table("experiments") == {
         "enabled": ["bool"],
-        "id": ["int"],
+        "id": ["str"],
         "name": ["str"],
         "score": ["int"],
     }
@@ -50,7 +57,8 @@ def test_db_cli_reads_and_writes_dynamic_json_db(tmp_path: Path) -> None:
         text=True,
     )
     inserted = json.loads(insert.stdout)
-    assert inserted == {"id": 1, "title": "first", "tags": ["dev"]}
+    row_id = _assert_uuid(inserted["id"])
+    assert inserted == {"id": row_id, "title": "first", "tags": ["dev"]}
 
     update = subprocess.run(
         [
@@ -60,7 +68,7 @@ def test_db_cli_reads_and_writes_dynamic_json_db(tmp_path: Path) -> None:
             str(db_path),
             "update",
             "notes",
-            "1",
+            row_id,
             "--data",
             '{"done":true}',
         ],

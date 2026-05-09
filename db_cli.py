@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     get_parser = subparsers.add_parser("get", help="Get one row by id.")
     get_parser.add_argument("table")
-    get_parser.add_argument("id", type=int)
+    get_parser.add_argument("id")
 
     insert_parser = subparsers.add_parser("insert", help="Insert a row. Unknown tables are created.")
     insert_parser.add_argument("table")
@@ -69,13 +69,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     update_parser = subparsers.add_parser("update", help="Patch a row by id.")
     update_parser.add_argument("table")
-    update_parser.add_argument("id", type=int)
+    update_parser.add_argument("id")
     update_parser.add_argument("--data", type=_json_arg)
     update_parser.add_argument("--file")
 
     delete_parser = subparsers.add_parser("delete", help="Delete one row by id.")
     delete_parser.add_argument("table")
-    delete_parser.add_argument("id", type=int)
+    delete_parser.add_argument("id")
 
     return parser
 

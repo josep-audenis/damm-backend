@@ -59,7 +59,7 @@ async def geocode_missing_warehouses(limit: int = 25) -> GeocodeBatchResponse:
             continue
         db_service.update_row(
             "warehouses",
-            int(warehouse["id"]),
+            warehouse["id"],
             {"lat": coordinates.lat, "lng": coordinates.lng},
         )
         updated += 1
@@ -127,12 +127,12 @@ async def geocode_missing_customers(limit: int = 25) -> GeocodeBatchResponse:
     updated = 0
     failed = 0
     for customer in customers:
-        coordinates = await geocode_location(customer)
+        coordinates = await geocode_location(customer, use_fallbacks=False)
         if coordinates is None:
             failed += 1
             continue
         patch = {"lat": coordinates.lat, "lng": coordinates.lng}
-        db_service.update_row("customers", int(customer["id"]), patch)
+        db_service.update_row("customers", customer["id"], patch)
         db_service.update_rows_by_field("delivery_stops", "customer_id", customer["id"], patch)
         updated += 1
 
