@@ -428,6 +428,23 @@ textarea {
   background: #fff;
 }
 
+.pick-pallet-header {
+  margin-top: 0.6rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: rgba(37, 99, 235, 0.08);
+  border-left: 3px solid var(--blue);
+  border-radius: 0.25rem;
+}
+
+.pick-pallet-header:first-child {
+  margin-top: 0;
+}
+
 .route-item strong,
 .pick-item strong {
   color: var(--accent-dark);
@@ -456,9 +473,15 @@ textarea {
 }
 
 .pallet-tile {
+<<<<<<< HEAD
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+=======
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+>>>>>>> c65561c4c44dbcd5c9eed9fa4ff4b2e9983adc9b
   min-height: 5rem;
   border: 1px solid rgba(29, 37, 34, 0.16);
   border-radius: 0.45rem;
@@ -474,6 +497,7 @@ textarea {
   white-space: nowrap;
 }
 
+<<<<<<< HEAD
 .truck-col-header {
   padding: 0.25rem 0.5rem;
   font-size: 0.7rem;
@@ -497,6 +521,35 @@ textarea {
   font-weight: 400;
   opacity: 0.75;
   margin-bottom: auto;
+=======
+.pallet-tile small {
+  opacity: 0.92;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pallet-contents {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.pallet-contents li {
+  padding: 0.05rem 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pallet-contents li.more {
+  opacity: 0.78;
+  font-style: italic;
+>>>>>>> c65561c4c44dbcd5c9eed9fa4ff4b2e9983adc9b
 }
 
 .schema-panel {
