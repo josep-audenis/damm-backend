@@ -10,10 +10,31 @@
     <main class="shell">
       <aside class="sidebar">
         <div>
-          <p class="eyebrow">JSON database</p>
+          <p class="eyebrow">Optimization demo</p>
           <h1>Damm DB Manager</h1>
-          <p class="muted">Inspect local schema, read rows, write dynamic JSON records.</p>
+          <p class="muted">Run transport optimization, watch WebSocket progress, inspect generated route and load.</p>
         </div>
+
+        <section class="side-card">
+          <label>
+            Transport
+            <select id="transportSelect"></select>
+          </label>
+          <label>
+            Truck
+            <select id="truckType">
+              <option value="6pal">6 pallets</option>
+              <option value="8pal">8 pallets</option>
+              <option value="van">Van</option>
+            </select>
+          </label>
+          <label class="checkbox-row">
+            <input id="respectWindows" type="checkbox" checked />
+            <span>Respect windows</span>
+          </label>
+          <button id="runOptimization" class="button primary">Run optimization</button>
+          <p id="optStatus" class="status">Loading transports.</p>
+        </section>
 
         <button id="refreshTables" class="button primary">Refresh tables</button>
         <nav id="tableList" class="table-list" aria-label="Database tables"></nav>
@@ -33,6 +54,64 @@
             <button id="loadRows" class="button">Load rows</button>
           </div>
         </header>
+
+        <section class="optimizer-grid">
+          <article class="panel optimizer-panel">
+            <div class="panel-heading">
+              <h3>Optimization progress</h3>
+              <span id="jobBadge" class="pill">No job</span>
+            </div>
+            <div class="progress-track" aria-label="Optimization progress">
+              <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <div id="progressSteps" class="progress-steps"></div>
+          </article>
+
+          <article class="panel optimizer-panel">
+            <div class="panel-heading">
+              <h3>KPIs</h3>
+              <span id="solverBadge" class="pill">Waiting</span>
+            </div>
+            <div class="kpi-grid">
+              <div>
+                <span>Total stops</span>
+                <strong id="kpiStops">-</strong>
+              </div>
+              <div>
+                <span>Distance</span>
+                <strong id="kpiDistance">-</strong>
+              </div>
+              <div>
+                <span>Drive time</span>
+                <strong id="kpiTime">-</strong>
+              </div>
+              <div>
+                <span>Pallet slots</span>
+                <strong id="kpiPallets">-</strong>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="visual-grid">
+          <article class="panel route-panel">
+            <div class="panel-heading">
+              <h3>Route order</h3>
+              <span id="routeCount" class="pill">0 stops</span>
+            </div>
+            <svg id="routeMap" viewBox="0 0 720 420" role="img" aria-label="Optimized route map"></svg>
+            <div id="routeList" class="route-list"></div>
+          </article>
+
+          <article class="panel load-panel">
+            <div class="panel-heading">
+              <h3>Truck load</h3>
+              <span id="loadCount" class="pill">0 pallets</span>
+            </div>
+            <div id="truckViz" class="truck-viz"></div>
+            <div id="pickList" class="pick-list"></div>
+          </article>
+        </section>
 
         <section class="panel schema-panel">
           <div class="panel-heading">
