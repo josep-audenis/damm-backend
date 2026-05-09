@@ -1,0 +1,13 @@
+# SmartTruck Wiki Log
+
+## [2026-05-09] setup | Shared LLM Wiki Snapshot
+
+Created the shared SmartTruck wiki from the definitive plan, Karpathy LLM-wiki workflow, and `DATA_MODELS.md`.
+
+Key decisions:
+
+- Use shared markdown contracts because frontend and backend repos will be developed separately.
+- Treat data models, API paths, enum values, and WebSocket messages as the most important coordination contract.
+- Use `/api/v1/optimize/full` plus `/ws/jobs/{job_id}` as the primary optimization workflow.
+- Keep backend deterministic; use OpenAI Agents SDK only for explanations and generated operational summaries.
+

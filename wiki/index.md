@@ -1,0 +1,24 @@
+# SmartTruck Wiki Index
+
+## Contracts
+
+- [Data Models](contracts/data-models.md): canonical domain, request/response, visualization, and WebSocket schemas.
+- [API Contract](contracts/api-contract.md): endpoint paths, payload shapes, and frontend/backend communication flow.
+- [Separation Of Concerns](contracts/separation-of-concerns.md): what backend owns, what frontend owns, and what must remain shared.
+
+## Backend
+
+- [Backend Agent Instructions](backend/agent-instructions.md): backend repo implementation rules.
+
+## Frontend
+
+- [Frontend Agent Instructions](frontend/agent-instructions.md): frontend repo implementation rules.
+
+## Decisions
+
+- [Decision Log](decisions/README.md): architectural decisions and contract proposals.
+
+## Log
+
+- [log.md](log.md): chronological wiki maintenance log.
+
