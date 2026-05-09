@@ -58,3 +58,9 @@ def delete_row(table: str, row_id: int) -> dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail="Row not found")
     return row
+
+
+@router.delete("/{table}")
+def clear_table(table: str) -> dict[str, int | str]:
+    deleted = db_service.clear_table(table)
+    return {"table": table, "deleted": deleted}

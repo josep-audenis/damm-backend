@@ -18,7 +18,14 @@ python -m venv .venv
 Open:
 
 ```text
+http://127.0.0.1:8000/app/
 http://127.0.0.1:8000/docs
+```
+
+If port `8000` is busy:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn main:app --port 8001
 ```
 
 ## Test

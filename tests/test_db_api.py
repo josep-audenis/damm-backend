@@ -55,3 +55,23 @@ def test_dynamic_db_api_rejects_client_supplied_ids(tmp_path: Path) -> None:
         assert response.json()["detail"] == "Payload must not include id"
     finally:
         db_router.db_service = original_service
+
+
+def test_dynamic_db_api_clears_table(tmp_path: Path) -> None:
+    service = DatabaseService(db_path=tmp_path / "api_db.json")
+    original_service = db_router.db_service
+    db_router.db_service = service
+    client = TestClient(app)
+
+    try:
+        client.post("/api/v1/db/experiments", json={"name": "first"})
+        client.post("/api/v1/db/experiments", json={"name": "second"})
+
+        response = client.delete("/api/v1/db/experiments")
+
+        assert response.status_code == 200
+        assert response.json() == {"table": "experiments", "deleted": 2}
+        assert client.get("/api/v1/db/experiments").json() == []
+        assert client.get("/api/v1/db/tables").json()["experiments"] == 0
+    finally:
+        db_router.db_service = original_service
