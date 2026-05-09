@@ -7,6 +7,8 @@ const state = {
   optimization: null,
   progress: [],
   socket: null,
+  map: null,
+  routeLayer: null,
 };
 
 const elements = {
@@ -25,6 +27,7 @@ const elements = {
   kpiPallets: document.querySelector("#kpiPallets"),
   routeCount: document.querySelector("#routeCount"),
   routeMap: document.querySelector("#routeMap"),
+  routeSvg: document.querySelector("#routeSvg"),
   routeList: document.querySelector("#routeList"),
   loadCount: document.querySelector("#loadCount"),
   truckViz: document.querySelector("#truckViz"),
@@ -103,6 +106,8 @@ function resetOptimizationView() {
   elements.routeCount.textContent = "0 stops";
   elements.loadCount.textContent = "0 pallets";
   elements.routeMap.innerHTML = "";
+  elements.routeMap.append(elements.routeSvg);
+  elements.routeSvg.innerHTML = "";
   elements.routeList.innerHTML = '<div class="empty">Run optimization to see stop order.</div>';
   elements.truckViz.innerHTML = '<div class="empty">Run optimization to see pallet layout.</div>';
   elements.pickList.innerHTML = "";
@@ -128,47 +133,92 @@ function renderProgress(message) {
 function renderRoute(route) {
   const stops = route?.ordered_stops || [];
   elements.routeCount.textContent = `${stops.length} stops`;
-  elements.routeMap.innerHTML = "";
+  if (state.map && state.routeLayer) {
+    state.routeLayer.clearLayers();
+  }
+  elements.routeSvg.innerHTML = "";
   elements.routeList.innerHTML = "";
 
   if (stops.length === 0) {
-    elements.routeMap.innerHTML = '<text x="50%" y="50%" text-anchor="middle" class="route-label">No route yet</text>';
+    elements.routeSvg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" class="route-label">No route yet</text>';
+    return;
+  }
+
+  const hasAllCoords = stops.every((stop) => stop.lat !== null && stop.lng !== null);
+  if (hasAllCoords && window.L) {
+    renderLeafletRoute(stops);
+  } else {
+    renderCoordinateFallback(stops, hasAllCoords);
+  }
+
+  for (const [index, stop] of stops.entries()) {
+    const item = document.createElement("div");
+    item.className = "route-item";
+    item.innerHTML = `<strong>${index + 1}</strong><span>${stop.customer_name} | ${stop.city}</span>`;
+    elements.routeList.append(item);
+  }
+}
+
+function renderLeafletRoute(stops) {
+  elements.routeSvg.style.display = "none";
+  if (!state.map) {
+    state.map = L.map(elements.routeMap, { scrollWheelZoom: false });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap",
+    }).addTo(state.map);
+    state.routeLayer = L.layerGroup().addTo(state.map);
+  }
+  state.routeLayer.clearLayers();
+  const latLngs = stops.map((stop) => [stop.lat, stop.lng]);
+  const geojson = state.optimization?.viz?.route_geojson;
+  if (geojson) {
+    L.geoJSON(geojson, { style: { color: "#2563eb", weight: 5 } }).addTo(state.routeLayer);
+  } else {
+    L.polyline(latLngs, { color: "#2563eb", weight: 4, dashArray: "8 7" }).addTo(state.routeLayer);
+  }
+  L.marker([41.5409, 2.2134]).bindPopup("DDI Mollet depot").addTo(state.routeLayer);
+  stops.forEach((stop, index) => {
+    L.marker([stop.lat, stop.lng])
+      .bindPopup(`${index + 1}. ${stop.customer_name}`)
+      .addTo(state.routeLayer);
+  });
+  state.map.fitBounds([[41.5409, 2.2134], ...latLngs], { padding: [32, 32] });
+}
+
+function renderCoordinateFallback(stops, hasAllCoords) {
+  elements.routeSvg.style.display = "block";
+  if (!hasAllCoords) {
+    elements.routeSvg.innerHTML =
+      '<text x="50%" y="46%" text-anchor="middle" class="route-label">Missing coordinates for this transport.</text><text x="50%" y="54%" text-anchor="middle" class="route-label">Enable geocoding or choose geocoded stops.</text>';
     return;
   }
 
   const points = stops.map((stop, index) => {
-    const fallbackX = 80 + (index % 6) * 105;
-    const fallbackY = 80 + Math.floor(index / 6) * 110;
     return {
       stop,
       index,
       lat: stop.lat,
       lng: stop.lng,
-      x: fallbackX,
-      y: fallbackY,
+      x: 0,
+      y: 0,
     };
   });
-  const withCoords = points.filter((point) => point.lat !== null && point.lng !== null);
-  if (withCoords.length > 1) {
-    const lats = withCoords.map((point) => point.lat);
-    const lngs = withCoords.map((point) => point.lng);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-    for (const point of points) {
-      if (point.lat === null || point.lng === null) {
-        continue;
-      }
-      point.x = 50 + ((point.lng - minLng) / Math.max(maxLng - minLng, 0.0001)) * 620;
-      point.y = 370 - ((point.lat - minLat) / Math.max(maxLat - minLat, 0.0001)) * 320;
-    }
+  const lats = points.map((point) => point.lat);
+  const lngs = points.map((point) => point.lng);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  for (const point of points) {
+    point.x = 50 + ((point.lng - minLng) / Math.max(maxLng - minLng, 0.0001)) * 620;
+    point.y = 370 - ((point.lat - minLat) / Math.max(maxLat - minLat, 0.0001)) * 320;
   }
 
   const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
   polyline.setAttribute("class", "route-line");
   polyline.setAttribute("points", points.map((point) => `${point.x},${point.y}`).join(" "));
-  elements.routeMap.append(polyline);
+  elements.routeSvg.append(polyline);
 
   for (const point of points) {
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -176,7 +226,7 @@ function renderRoute(route) {
     circle.setAttribute("cx", point.x);
     circle.setAttribute("cy", point.y);
     circle.setAttribute("r", "13");
-    elements.routeMap.append(circle);
+    elements.routeSvg.append(circle);
 
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("class", "route-label");
@@ -184,12 +234,7 @@ function renderRoute(route) {
     label.setAttribute("y", point.y + 4);
     label.setAttribute("text-anchor", "middle");
     label.textContent = String(point.index + 1);
-    elements.routeMap.append(label);
-
-    const item = document.createElement("div");
-    item.className = "route-item";
-    item.innerHTML = `<strong>${point.index + 1}</strong><span>${point.stop.customer_name} | ${point.stop.city}</span>`;
-    elements.routeList.append(item);
+    elements.routeSvg.append(label);
   }
 }
 
@@ -238,8 +283,8 @@ function renderOptimizationResult(result) {
   elements.kpiDistance.textContent = route ? `${route.total_distance_km} km` : "-";
   elements.kpiTime.textContent = route ? `${Math.round(route.total_time_min)} min` : "-";
   elements.kpiPallets.textContent = load ? `${load.pallet_slots_used}/${load.pallet_slots_total}` : "-";
-  renderRoute(route);
   renderTruck(load, result.viz);
+  renderRoute(route);
 }
 
 async function runOptimization() {
@@ -261,6 +306,7 @@ async function runOptimization() {
       transport_id: transportId,
       truck_type: elements.truckType.value,
       respect_time_windows: elements.respectWindows.checked,
+      use_real_roads: true,
       solver_time_limit_s: 5,
     }),
   });
