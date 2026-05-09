@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import data, optimize
+from routers import catalog, data, optimize
+from services.database import db_service
 
 
 app = FastAPI(
@@ -17,6 +18,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+db_service.init_db()
+
+app.include_router(catalog.router)
 app.include_router(data.router)
 app.include_router(optimize.router)
 
