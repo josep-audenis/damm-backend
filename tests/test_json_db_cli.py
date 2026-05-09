@@ -27,6 +27,9 @@ def test_database_service_creates_dynamic_tables(tmp_path: Path) -> None:
         "score": ["int"],
     }
 
+    assert service.clear_table("experiments") == 1
+    assert service.list_rows("experiments") == []
+
 
 def test_db_cli_reads_and_writes_dynamic_json_db(tmp_path: Path) -> None:
     db_path = tmp_path / "cli_db.json"

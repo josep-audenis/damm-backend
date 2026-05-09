@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Damm DB Manager</title>
+    <link rel="stylesheet" href="/app/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">JSON database</p>
+          <h1>Damm DB Manager</h1>
+          <p class="muted">Inspect local schema, read rows, write dynamic JSON records.</p>
+        </div>
+
+        <button id="refreshTables" class="button primary">Refresh tables</button>
+        <nav id="tableList" class="table-list" aria-label="Database tables"></nav>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Selected table</p>
+            <h2 id="selectedTable">No table selected</h2>
+          </div>
+          <div class="toolbar">
+            <label>
+              Limit
+              <input id="rowLimit" type="number" min="1" max="10000" value="25" />
+            </label>
+            <button id="loadRows" class="button">Load rows</button>
+          </div>
+        </header>
+
+        <section class="panel schema-panel">
+          <div class="panel-heading">
+            <h3>Schema from local JSON</h3>
+            <span id="rowCount" class="pill">0 rows</span>
+          </div>
+          <div id="schemaFields" class="schema-fields"></div>
+        </section>
+
+        <section class="grid">
+          <article class="panel rows-panel">
+            <div class="panel-heading">
+            <h3>Rows</h3>
+              <div class="row-tools">
+                <span class="muted">Click row to edit</span>
+                <button id="clearTable" class="button danger subtle" disabled>Clean table</button>
+              </div>
+            </div>
+            <div id="rowsTable" class="rows-table"></div>
+          </article>
+
+          <article class="panel editor-panel">
+            <div class="panel-heading">
+              <h3 id="editorTitle">Insert row</h3>
+              <button id="newRow" class="button ghost">New</button>
+            </div>
+            <label class="table-name-field">
+              Table
+              <input id="tableName" placeholder="new_or_existing_table" />
+            </label>
+            <textarea id="jsonEditor" spellcheck="false">{}</textarea>
+            <p id="status" class="status">Ready.</p>
+            <div class="actions">
+              <button id="saveRow" class="button primary">Save</button>
+              <button id="deleteRow" class="button danger" disabled>Delete</button>
+            </div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app/app.js"></script>
+  </body>
+</html>
