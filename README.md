@@ -126,9 +126,9 @@ curl -X PATCH http://127.0.0.1:8000/api/v1/db/notes/<row_id> \
 
 ## Import Orders From CSV
 
-Upload a CSV of new orders. The CSV must have a header row and use `;` or `,` as the delimiter. Required columns: `customer_name`, `qty`, `unit`. Optional columns: `material_code`, `material_name`, `due_date`.
+Upload a CSV of new orders. The CSV must have a header row and use `;` or `,` as the delimiter. Required columns: `customer_id`, `material_id`, `quantity`, `sales_unit`. Optional column: `due_date`.
 
-The importer is strict: rows are inserted only when both the customer (matched by uppercase `name`) and the material (matched by uppercase `description`, falling back to `material_code`) already exist in the database. Unknown customers and materials are skipped, never created. A ready-to-use sample for the seeded demo DB lives at `data/sample_orders.csv`.
+`customer_id` and `material_id` are the UUIDs from the `customers` and `materials` tables (browse them via `GET /api/v1/db/customers` and `GET /api/v1/db/materials`, or in the static demo). The importer is strict: rows are inserted only when both UUIDs already exist. Unknown customers and materials are skipped, never created. A ready-to-use sample for the seeded demo DB lives at `data/sample_orders.csv`.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/data/orders/import \
@@ -137,6 +137,14 @@ curl -X POST http://127.0.0.1:8000/api/v1/data/orders/import \
 ```
 
 The response includes `received`, `inserted`, `skipped`, the list of `unknown_customers`, the list of `unknown_materials`, and the first 200 per-row errors.
+
+Every imported order is tagged with `imported_via_csv: true`. To wipe everything created by past CSV imports — without touching the seeded baseline — call:
+
+```bash
+curl -X DELETE http://127.0.0.1:8000/api/v1/data/orders/imported
+```
+
+Response: `{"status":"ok","deleted_orders":<n>,"deleted_delivery_lines":<n>}`. The static demo has a "Clear imported orders" button next to "Import CSV" that does the same thing.
 
 ## JSON DB CLI
 

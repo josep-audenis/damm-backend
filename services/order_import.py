@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import io
-import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -10,17 +9,8 @@ from typing import Any
 from services.database import DatabaseService, db_service
 
 
-CSV_REQUIRED_COLUMNS = {"customer_name", "qty", "unit"}
-CSV_KNOWN_COLUMNS = {
-    "customer_name",
-    "material_code",
-    "material_name",
-    "qty",
-    "quantity",
-    "unit",
-    "sales_unit",
-    "due_date",
-}
+CSV_REQUIRED_COLUMNS = {"customer_id", "material_id", "quantity", "sales_unit"}
+CSV_KNOWN_COLUMNS = CSV_REQUIRED_COLUMNS | {"due_date"}
 
 
 @dataclass
@@ -40,11 +30,13 @@ class ImportSummary:
     unknown_materials: list[str] = field(default_factory=list)
 
 
-def _normalize_text(value: Any) -> str:
-    if value is None:
-        return ""
-    text = re.sub(r"\s+", " ", str(value)).strip()
-    return text.upper()
+@dataclass
+class ClearImportedSummary:
+    deleted_orders: int = 0
+    deleted_delivery_lines: int = 0
+
+
+IMPORT_MARKER_FIELD = "imported_via_csv"
 
 
 def _detect_delimiter(sample: str) -> str:
@@ -74,11 +66,16 @@ def _coerce_due_date(value: str | None, fallback: date) -> str:
 class OrderImporter:
     """Parses an orders CSV and inserts rows into the `orders` table.
 
-    Strict mode: rows whose customer or material is not already in the DB are
-    skipped and reported. The importer never creates new `customers` or
-    `materials` rows. Customer matching is by uppercase `name`; material
-    matching is by uppercase `description` (with `material_name` preferred over
-    `material_code` since the JSON DB does not store source SKU codes).
+    The CSV uses the same column names as the `orders` JSON DB schema:
+
+        customer_id;material_id;quantity;sales_unit[;due_date]
+
+    `customer_id` and `material_id` must be UUIDs that already exist in the
+    `customers` / `materials` tables — the importer never creates new rows in
+    those tables. Rows whose IDs are unknown are skipped and reported via
+    `unknown_customers` / `unknown_materials`. Every inserted order is tagged
+    with `imported_via_csv: true` so it can be cleaned up later via
+    :meth:`clear_imported`.
     """
 
     def __init__(self, service: DatabaseService = db_service) -> None:
@@ -104,8 +101,8 @@ class OrderImporter:
             raise ValueError(f"Missing required CSV columns: {sorted(missing)}")
 
         db = self.service.load()
-        customers_index = self._index_customers(db)
-        materials_index = self._index_materials(db)
+        customer_ids = {row["id"] for row in db["tables"].get("customers", []) if row.get("id")}
+        material_ids = {row["id"] for row in db["tables"].get("materials", []) if row.get("id")}
         target_due_date = (due_date or date.today()).isoformat()
 
         summary = ImportSummary()
@@ -116,15 +113,13 @@ class OrderImporter:
             row = {(key or "").strip().lower(): (value or "") for key, value in raw_row.items()}
             summary.received += 1
 
-            customer_name = row.get("customer_name", "").strip()
-            material_code = row.get("material_code", "").strip()
-            material_name = row.get("material_name", "").strip()
-            unit = (row.get("unit") or row.get("sales_unit") or "").strip().upper()
-            qty_raw = row.get("qty") or row.get("quantity") or ""
-            quantity = _coerce_quantity(qty_raw)
+            customer_id = row.get("customer_id", "").strip()
+            material_id = row.get("material_id", "").strip()
+            sales_unit = row.get("sales_unit", "").strip().upper()
+            quantity = _coerce_quantity(row.get("quantity", ""))
             due = _coerce_due_date(row.get("due_date"), date.fromisoformat(target_due_date))
 
-            if not customer_name or not unit or not (material_code or material_name):
+            if not customer_id or not material_id or not sales_unit:
                 summary.skipped += 1
                 summary.errors.append(
                     ImportRowError(row=line_no, reason="missing_required_fields", raw=row)
@@ -142,22 +137,16 @@ class OrderImporter:
                     ImportRowError(row=line_no, reason="non_positive_quantity", raw=row)
                 )
                 continue
-
-            customer_key = _normalize_text(customer_name)
-            customer = customers_index.get(customer_key)
-            if customer is None:
+            if customer_id not in customer_ids:
                 summary.skipped += 1
-                unknown_customers.add(customer_key)
+                unknown_customers.add(customer_id)
                 summary.errors.append(
                     ImportRowError(row=line_no, reason="unknown_customer", raw=row)
                 )
                 continue
-
-            material_key = _normalize_text(material_name) if material_name else None
-            material = materials_index.get(material_key) if material_key else None
-            if material is None:
+            if material_id not in material_ids:
                 summary.skipped += 1
-                unknown_materials.add(material_key or _normalize_text(material_code))
+                unknown_materials.add(material_id)
                 summary.errors.append(
                     ImportRowError(row=line_no, reason="unknown_material", raw=row)
                 )
@@ -167,12 +156,13 @@ class OrderImporter:
                 db,
                 "orders",
                 {
-                    "customer_id": customer["id"],
+                    "customer_id": customer_id,
                     "due_date": due,
-                    "material_id": material["id"],
+                    "material_id": material_id,
                     "quantity": quantity,
-                    "sales_unit": unit,
+                    "sales_unit": sales_unit,
                     "delivered_flag": False,
+                    IMPORT_MARKER_FIELD: True,
                 },
             )
             summary.inserted += 1
@@ -183,6 +173,33 @@ class OrderImporter:
         summary.unknown_materials = sorted(unknown_materials)
         return summary
 
+    def clear_imported(self) -> ClearImportedSummary:
+        """Delete every order created through `import_csv` and any delivery
+        lines pointing at them. Existing seeded orders (without the marker)
+        are left untouched.
+        """
+        db = self.service.load()
+        orders = db["tables"].get("orders", [])
+        imported_ids = {row["id"] for row in orders if row.get(IMPORT_MARKER_FIELD)}
+        if not imported_ids:
+            return ClearImportedSummary()
+
+        kept_orders = [row for row in orders if row["id"] not in imported_ids]
+        deleted_orders = len(orders) - len(kept_orders)
+        db["tables"]["orders"] = kept_orders
+
+        delivery_lines = db["tables"].get("delivery_lines", [])
+        kept_lines = [row for row in delivery_lines if row.get("order_id") not in imported_ids]
+        deleted_lines = len(delivery_lines) - len(kept_lines)
+        if deleted_lines:
+            db["tables"]["delivery_lines"] = kept_lines
+
+        self.service.save(db)
+        return ClearImportedSummary(
+            deleted_orders=deleted_orders,
+            deleted_delivery_lines=deleted_lines,
+        )
+
     def _decode(self, content: bytes | str) -> str:
         if isinstance(content, str):
             return content
@@ -190,22 +207,6 @@ class OrderImporter:
             return content.decode("utf-8-sig")
         except UnicodeDecodeError:
             return content.decode("latin-1", errors="replace")
-
-    def _index_customers(self, db: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        index: dict[str, dict[str, Any]] = {}
-        for row in db["tables"].get("customers", []):
-            key = _normalize_text(row.get("name"))
-            if key and key not in index:
-                index[key] = row
-        return index
-
-    def _index_materials(self, db: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        index: dict[str, dict[str, Any]] = {}
-        for row in db["tables"].get("materials", []):
-            key = _normalize_text(row.get("description"))
-            if key and key not in index:
-                index[key] = row
-        return index
 
 
 order_importer = OrderImporter()

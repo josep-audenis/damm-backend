@@ -95,6 +95,12 @@ class OrderImportResponse(BaseModel):
     errors: list[OrderImportRowError] = Field(default_factory=list)
 
 
+class ClearImportedOrdersResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    deleted_orders: int
+    deleted_delivery_lines: int
+
+
 class RoutePreviewResponse(BaseModel):
     route: RouteResult
 

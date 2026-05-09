@@ -206,6 +206,7 @@ One row per material quantity ordered by a customer for a due date. Sourced from
 | `quantity` | float | Quantity in `sales_unit` |
 | `sales_unit` | str | Source unit such as `PAL`, `CAJ`, `UN` |
 | `delivered_flag` | bool | `false` when pending delivery, `true` after delivered |
+| `imported_via_csv` | bool\|absent | Present and `true` only on rows created through `POST /api/v1/data/orders/import`; absent on seeded rows. Used by `DELETE /api/v1/data/orders/imported` to wipe imported test data without touching the baseline. |
 
 ---
 

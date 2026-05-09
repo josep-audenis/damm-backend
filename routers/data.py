@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from models.schemas import (
+    ClearImportedOrdersResponse,
     CustomerDetail,
     HealthResponse,
     OrderImportResponse,
@@ -76,4 +77,13 @@ async def import_orders_csv(
             OrderImportRowError(row=err.row, reason=err.reason, raw=err.raw)
             for err in summary.errors[:200]
         ],
+    )
+
+
+@router.delete("/orders/imported", response_model=ClearImportedOrdersResponse)
+def clear_imported_orders() -> ClearImportedOrdersResponse:
+    summary = order_importer.clear_imported()
+    return ClearImportedOrdersResponse(
+        deleted_orders=summary.deleted_orders,
+        deleted_delivery_lines=summary.deleted_delivery_lines,
     )
