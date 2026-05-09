@@ -13,7 +13,7 @@ from models.catalog import (
     WarehouseCreate,
     WarehouseRead,
 )
-from services.database import db_service
+from services.db_provider import db_service
 from services.geocoding import geocode_location
 
 

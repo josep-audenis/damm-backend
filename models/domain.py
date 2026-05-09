@@ -213,6 +213,8 @@ class OptimizationResult(BaseModel):
     created_at: DateTimeType
     completed_at: DateTimeType | None = None
     route: RouteResult | None = None
+    routes: list[RouteResult] = Field(default_factory=list)
     load: LoadPlan | None = None
+    loads: list[LoadPlan] = Field(default_factory=list)
     viz: TruckVisualization | None = None
     error_message: str | None = None

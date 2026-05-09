@@ -18,6 +18,10 @@ def optimize_full(request: OptimizeRequest, background_tasks: BackgroundTasks) -
 
 @router.post("/full/preview", response_model=OptimizationResultResponse)
 def optimize_full_preview(request: OptimizeRequest) -> OptimizationResultResponse:
+    if request.transport_id is None:
+        request = request.model_copy(update={"persist_plan": False})
+        result = optimization_service.optimize_orders(request)
+        return OptimizationResultResponse(result=result)
     transport = repository.get_transport(request.transport_id)
     if transport is None:
         raise HTTPException(status_code=404, detail="Transport not found")

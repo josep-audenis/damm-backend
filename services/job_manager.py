@@ -24,6 +24,7 @@ from services.optimization import (
     build_route_result,
     build_truck_visualization,
     group_stops_by_customer,
+    optimization_service,
     solve_route,
 )
 from services.road_routing import build_road_matrix, build_route_geojson
@@ -93,7 +94,7 @@ class JobManager:
         created_at = datetime.now(UTC)
         record.result = OptimizationResult(
             job_id=job_id,
-            transport_id=request.transport_id,
+            transport_id=request.transport_id or "order-plan",
             status="running",
             created_at=created_at,
         )
@@ -102,8 +103,29 @@ class JobManager:
                 record,
                 "geocoding",
                 10,
-                "Geocoding customer addresses...",
+                "Preparing optimization inputs...",
             )
+            if request.transport_id is None:
+                await self._publish_progress(
+                    record,
+                    "order_planning",
+                    25,
+                    "Loading open orders, customers, trucks, and constraints...",
+                )
+                result = optimization_service.optimize_orders(request, job_id=job_id)
+                record.result = result
+                if result.route is not None:
+                    await self._publish(record, WsPartialResult(job_id=job_id, route=result.route, timestamp=datetime.now(UTC)))
+                await self._publish_progress(
+                    record,
+                    "done",
+                    100,
+                    "Multi-vehicle optimization complete",
+                )
+                await self._publish(record, WsResult(job_id=job_id, result=result, timestamp=datetime.now(UTC)))
+                await self._publish(record, WsDone(job_id=job_id, timestamp=datetime.now(UTC)))
+                return
+
             transport = repository.get_transport(request.transport_id)
             if transport is None:
                 await self._publish_error(record, "TRANSPORT_NOT_FOUND", "Transport not found")
@@ -225,7 +247,7 @@ class JobManager:
         if record.result is None:
             record.result = OptimizationResult(
                 job_id=record.job_id,
-                transport_id=record.request.transport_id,
+                transport_id=record.request.transport_id or "order-plan",
                 status="error",
                 created_at=now,
                 completed_at=now,

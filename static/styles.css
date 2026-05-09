@@ -293,6 +293,30 @@ textarea {
   gap: 0.45rem;
 }
 
+.route-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+}
+
+.route-tab {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.42rem 0.62rem;
+  color: var(--muted);
+  background: #fff;
+  cursor: pointer;
+  font-family: "Lucida Console", Monaco, monospace;
+  font-size: 0.72rem;
+}
+
+.route-tab.active {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  background: #fff4e3;
+}
+
 .step-pill {
   border: 1px solid var(--line);
   border-radius: 999px;

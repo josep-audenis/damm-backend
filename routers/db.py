@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, HTTPException, Query
 
-from services.database import db_service
+from services.db_provider import db_service
 
 
 router = APIRouter(prefix="/api/v1/db", tags=["db"])

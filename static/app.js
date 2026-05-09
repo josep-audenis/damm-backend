@@ -3,7 +3,6 @@ const state = {
   selectedRowId: null,
   tables: {},
   rows: [],
-  transports: [],
   optimization: null,
   progress: [],
   socket: null,
@@ -12,15 +11,17 @@ const state = {
 };
 
 const elements = {
-  transportSelect: document.querySelector("#transportSelect"),
-  truckType: document.querySelector("#truckType"),
+  planDate: document.querySelector("#planDate"),
+  maxOrders: document.querySelector("#maxOrders"),
   respectWindows: document.querySelector("#respectWindows"),
+  persistPlan: document.querySelector("#persistPlan"),
   runOptimization: document.querySelector("#runOptimization"),
   optStatus: document.querySelector("#optStatus"),
   jobBadge: document.querySelector("#jobBadge"),
   progressBar: document.querySelector("#progressBar"),
   progressSteps: document.querySelector("#progressSteps"),
   solverBadge: document.querySelector("#solverBadge"),
+  kpiRoutes: document.querySelector("#kpiRoutes"),
   kpiStops: document.querySelector("#kpiStops"),
   kpiDistance: document.querySelector("#kpiDistance"),
   kpiTime: document.querySelector("#kpiTime"),
@@ -72,26 +73,6 @@ function setOptStatus(message, isError = false) {
   elements.optStatus.classList.toggle("error", isError);
 }
 
-function renderTransports() {
-  elements.transportSelect.innerHTML = "";
-  for (const transport of state.transports) {
-    const option = document.createElement("option");
-    option.value = transport.transport_id;
-    option.textContent = `${transport.transport_id} | ${transport.route_code} | ${transport.driver_name} | ${transport.stop_count} stops`;
-    elements.transportSelect.append(option);
-  }
-}
-
-async function loadTransports() {
-  state.transports = await request("/api/v1/data/transports");
-  renderTransports();
-  const demoOption = Array.from(elements.transportSelect.options).find((option) => option.value === "11420379");
-  if (demoOption) {
-    elements.transportSelect.value = demoOption.value;
-  }
-  setOptStatus(state.transports.length ? "Ready." : "No transports found.", state.transports.length === 0);
-}
-
 function resetOptimizationView() {
   state.optimization = null;
   state.progress = [];
@@ -99,6 +80,7 @@ function resetOptimizationView() {
   elements.solverBadge.textContent = "Waiting";
   elements.progressBar.style.width = "0%";
   elements.progressSteps.innerHTML = "";
+  elements.kpiRoutes.textContent = "-";
   elements.kpiStops.textContent = "-";
   elements.kpiDistance.textContent = "-";
   elements.kpiTime.textContent = "-";
@@ -108,8 +90,8 @@ function resetOptimizationView() {
   elements.routeMap.innerHTML = "";
   elements.routeMap.append(elements.routeSvg);
   elements.routeSvg.innerHTML = "";
-  elements.routeList.innerHTML = '<div class="empty">Run optimization to see stop order.</div>';
-  elements.truckViz.innerHTML = '<div class="empty">Run optimization to see pallet layout.</div>';
+  elements.routeList.innerHTML = '<div class="empty">Plan orders to see generated route order.</div>';
+  elements.truckViz.innerHTML = '<div class="empty">Plan orders to see truck load layout.</div>';
   elements.pickList.innerHTML = "";
 }
 
@@ -157,6 +139,28 @@ function renderRoute(route) {
     item.innerHTML = `<strong>${index + 1}</strong><span>${stop.customer_name} | ${stop.city}</span>`;
     elements.routeList.append(item);
   }
+}
+
+function renderRouteSelector(routes) {
+  if (!routes || routes.length <= 1) {
+    return;
+  }
+  const selector = document.createElement("div");
+  selector.className = "route-selector";
+  routes.forEach((route, index) => {
+    const button = document.createElement("button");
+    button.className = `route-tab${index === 0 ? " active" : ""}`;
+    button.textContent = `${route.route_code} | ${route.total_stops}`;
+    button.addEventListener("click", () => {
+      selector.querySelectorAll(".route-tab").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      renderRoute(route);
+      renderTruck(state.optimization.loads?.[index], buildVizForLoad(state.optimization.loads?.[index], route));
+      elements.routeList.prepend(selector);
+    });
+    selector.append(button);
+  });
+  elements.routeList.prepend(selector);
 }
 
 function renderLeafletRoute(stops) {
@@ -266,10 +270,28 @@ function renderTruck(load, viz) {
   }
 }
 
+function buildVizForLoad(load, route) {
+  if (!load) {
+    return null;
+  }
+  const colors = ["#2563eb", "#16a34a", "#f97316", "#dc2626", "#7c3aed", "#0891b2", "#4b5563"];
+  const names = Object.fromEntries((route?.ordered_stops || []).map((stop) => [stop.stop_id, stop.customer_name]));
+  return {
+    pallets: (load.pallets || []).map((pallet, index) => ({
+      pallet_id: pallet.pallet_id,
+      label: names[pallet.stop_ids?.[0]] || pallet.pallet_id,
+      color: colors[index % colors.length],
+      stop_ids: pallet.stop_ids || [],
+    })),
+  };
+}
+
 function renderOptimizationResult(result) {
   state.optimization = result;
-  const route = result.route;
-  const load = result.load;
+  const routes = result.routes?.length ? result.routes : result.route ? [result.route] : [];
+  const loads = result.loads?.length ? result.loads : result.load ? [result.load] : [];
+  const route = routes[0];
+  const load = loads[0];
   if (state.progress.length === 0) {
     renderProgress({
       type: "progress",
@@ -279,18 +301,26 @@ function renderOptimizationResult(result) {
     });
   }
   elements.solverBadge.textContent = route?.explanation || "Done";
-  elements.kpiStops.textContent = route ? String(route.total_stops) : "-";
-  elements.kpiDistance.textContent = route ? `${route.total_distance_km} km` : "-";
-  elements.kpiTime.textContent = route ? `${Math.round(route.total_time_min)} min` : "-";
-  elements.kpiPallets.textContent = load ? `${load.pallet_slots_used}/${load.pallet_slots_total}` : "-";
-  renderTruck(load, result.viz);
+  elements.kpiRoutes.textContent = String(routes.length);
+  elements.kpiStops.textContent = String(routes.reduce((total, item) => total + item.total_stops, 0));
+  elements.kpiDistance.textContent = `${routes.reduce((total, item) => total + item.total_distance_km, 0).toFixed(1)} km`;
+  elements.kpiTime.textContent = `${Math.round(routes.reduce((total, item) => total + item.total_time_min, 0))} min`;
+  elements.kpiPallets.textContent = loads.length
+    ? `${loads.reduce((total, item) => total + item.pallet_slots_used, 0)}/${loads.reduce((total, item) => total + item.pallet_slots_total, 0)}`
+    : "-";
+  renderTruck(load, result.viz || buildVizForLoad(load, route));
   renderRoute(route);
+  renderRouteSelector(routes);
 }
 
 async function runOptimization() {
-  const transportId = elements.transportSelect.value;
-  if (!transportId) {
-    setOptStatus("Pick transport first.", true);
+  const maxOrders = Number(elements.maxOrders.value || 0);
+  if (!elements.planDate.value) {
+    setOptStatus("Pick due date first.", true);
+    return;
+  }
+  if (!Number.isInteger(maxOrders) || maxOrders < 1 || maxOrders > 5000) {
+    setOptStatus("Max orders must be 1-5000.", true);
     return;
   }
 
@@ -303,8 +333,9 @@ async function runOptimization() {
   const accepted = await request("/api/v1/optimize/full", {
     method: "POST",
     body: JSON.stringify({
-      transport_id: transportId,
-      truck_type: elements.truckType.value,
+      date: elements.planDate.value,
+      max_orders: maxOrders,
+      persist_plan: elements.persistPlan.checked,
       respect_time_windows: elements.respectWindows.checked,
       use_real_roads: true,
       solver_time_limit_s: 5,
@@ -327,11 +358,17 @@ async function runOptimization() {
     }
     if (message.type === "done") {
       terminalMessageReceived = true;
-      setOptStatus("Optimization complete.");
+      setOptStatus("Order plan complete.");
       elements.runOptimization.disabled = false;
     }
     if (message.type === "error") {
       terminalMessageReceived = true;
+      elements.solverBadge.textContent = "Error";
+      elements.kpiRoutes.textContent = "-";
+      elements.kpiStops.textContent = "-";
+      elements.kpiDistance.textContent = "-";
+      elements.kpiTime.textContent = "-";
+      elements.kpiPallets.textContent = "-";
       setOptStatus(`${message.code}: ${message.message}`, true);
       elements.runOptimization.disabled = false;
     }
@@ -346,7 +383,7 @@ async function runOptimization() {
     try {
       const result = await request(`/api/v1/jobs/${accepted.job_id}`);
       renderOptimizationResult(result);
-      setOptStatus("Optimization complete.");
+      setOptStatus("Order plan complete.");
     } catch (error) {
       setOptStatus(error.message, true);
     } finally {
@@ -576,7 +613,6 @@ async function init() {
   bindEvents();
   resetOptimizationView();
   try {
-    await loadTransports();
     await refreshTables();
     const firstTable = Object.keys(state.tables)[0];
     if (firstTable) {

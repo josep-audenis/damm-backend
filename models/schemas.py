@@ -16,9 +16,13 @@ from models.domain import (
 
 
 class OptimizeRequest(BaseModel):
-    transport_id: str
-    truck_type: TruckType = TruckType.TRUCK_6
+    transport_id: str | None = None
     date: DateType | None = None
+    warehouse_id: str | None = None
+    truck_ids: list[str] | None = None
+    persist_plan: bool = True
+    max_orders: int = Field(default=500, ge=1, le=5000)
+    truck_type: TruckType = TruckType.TRUCK_6
     use_real_roads: bool = False
     respect_time_windows: bool = True
     include_returnables: bool = True
