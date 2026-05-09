@@ -9,7 +9,7 @@ client = TestClient(app)
 def test_optimize_full_streams_websocket_result() -> None:
     response = client.post(
         "/api/v1/optimize/full",
-        json={"transport_id": "11515121", "truck_type": "6pal", "solver_time_limit_s": 5},
+        json={"transport_id": "11420379", "truck_type": "6pal", "solver_time_limit_s": 5},
     )
 
     assert response.status_code == 200
@@ -39,14 +39,15 @@ def test_optimize_full_streams_websocket_result() -> None:
     result = next(message["result"] for message in messages if message["type"] == "result")
     assert result["job_id"] == accepted["job_id"]
     assert result["status"] == "done"
-    assert result["route"]["transport_id"] == "11515121"
+    assert result["route"]["transport_id"] == "11420379"
+    assert result["load"]["pallet_slots_used"] <= result["load"]["pallet_slots_total"]
     assert result["load"]["pick_list"]
 
 
 def test_job_fetch_returns_completed_result() -> None:
     response = client.post(
         "/api/v1/optimize/full",
-        json={"transport_id": "11515121", "truck_type": "6pal", "solver_time_limit_s": 5},
+        json={"transport_id": "11420379", "truck_type": "6pal", "solver_time_limit_s": 5},
     )
     accepted = response.json()
 
@@ -66,3 +67,19 @@ def test_unknown_websocket_job_returns_error() -> None:
 
     assert message["type"] == "error"
     assert message["code"] == "JOB_NOT_FOUND"
+
+
+def test_oversized_load_returns_packing_overflow() -> None:
+    response = client.post(
+        "/api/v1/optimize/full",
+        json={"transport_id": "11515121", "truck_type": "6pal", "solver_time_limit_s": 5},
+    )
+    accepted = response.json()
+
+    with client.websocket_connect(accepted["ws_url"]) as websocket:
+        while True:
+            message = websocket.receive_json()
+            if message["type"] == "error":
+                break
+
+    assert message["code"] == "PACKING_OVERFLOW"

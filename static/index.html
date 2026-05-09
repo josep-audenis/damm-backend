@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Damm DB Manager</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="/app/styles.css" />
   </head>
   <body>
@@ -99,7 +100,9 @@
               <h3>Route order</h3>
               <span id="routeCount" class="pill">0 stops</span>
             </div>
-            <svg id="routeMap" viewBox="0 0 720 420" role="img" aria-label="Optimized route map"></svg>
+            <div id="routeMap" class="route-map" role="img" aria-label="Optimized route map">
+              <svg id="routeSvg" viewBox="0 0 720 420" aria-hidden="true"></svg>
+            </div>
             <div id="routeList" class="route-list"></div>
           </article>
 
@@ -153,6 +156,7 @@
       </section>
     </main>
 
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="/app/app.js"></script>
   </body>
 </html>

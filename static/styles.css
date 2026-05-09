@@ -344,11 +344,12 @@ textarea {
   min-width: 0;
 }
 
-#routeMap {
+.route-map {
+  position: relative;
   width: 100%;
-  height: auto;
-  min-height: 20rem;
+  height: 24rem;
   margin-top: 1rem;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 0.5rem;
   background:
@@ -356,6 +357,11 @@ textarea {
     linear-gradient(90deg, #edf2ef 1px, transparent 1px),
     #fbfcfa;
   background-size: 48px 48px;
+}
+
+#routeSvg {
+  width: 100%;
+  height: 100%;
 }
 
 .route-line {

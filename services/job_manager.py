@@ -16,6 +16,7 @@ from models.schemas import (
     WsResult,
 )
 from services.data_loader import repository
+from services.coordinates import enrich_stops_from_local_coordinates, enrich_stops_with_geocoding
 from services.optimization import (
     apply_route,
     build_distance_time_matrix,
@@ -25,6 +26,7 @@ from services.optimization import (
     group_stops_by_customer,
     solve_route,
 )
+from services.road_routing import build_road_matrix, build_route_geojson
 
 
 WsMessage = WsProgress | WsPartialResult | WsResult | WsDone | WsError
@@ -113,8 +115,19 @@ class JobManager:
                 25,
                 "Calculating road distances...",
             )
-            grouped_stops = group_stops_by_customer(transport.stops)
-            matrix = build_distance_time_matrix(grouped_stops)
+            if request.use_real_roads:
+                source_stops = await enrich_stops_with_geocoding(transport.stops)
+            else:
+                source_stops = enrich_stops_from_local_coordinates(transport.stops)
+            grouped_stops = group_stops_by_customer(source_stops)
+            distance_source = "haversine"
+            matrix = None
+            if request.use_real_roads:
+                matrix = await build_road_matrix(grouped_stops)
+                if matrix is not None:
+                    distance_source = "osrm-road-network"
+            if matrix is None:
+                matrix = build_distance_time_matrix(grouped_stops)
 
             await self._publish_progress(
                 record,
@@ -130,7 +143,15 @@ class JobManager:
                 request.solver_time_limit_s,
             )
             ordered_stops = apply_route(grouped_stops, route_indices)
-            route = build_route_result(transport, request, ordered_stops, route_indices, matrix, solver_name)
+            route = build_route_result(
+                transport,
+                request,
+                ordered_stops,
+                route_indices,
+                matrix,
+                solver_name,
+                distance_source,
+            )
             await self._publish(record, WsPartialResult(job_id=job_id, route=route, timestamp=datetime.now(UTC)))
 
             await self._publish_progress(
@@ -140,6 +161,13 @@ class JobManager:
                 "Planning truck load configuration...",
             )
             load = build_load_plan(transport, request, ordered_stops)
+            if load.pallet_slots_used > load.pallet_slots_total:
+                await self._publish_error(
+                    record,
+                    "PACKING_OVERFLOW",
+                    f"Load needs {load.pallet_slots_used} pallet slots but truck only has {load.pallet_slots_total}",
+                )
+                return
 
             await self._publish_progress(
                 record,
@@ -153,7 +181,10 @@ class JobManager:
                 90,
                 "Building 3D visualization...",
             )
-            viz = build_truck_visualization(load, ordered_stops)
+            route_geojson = None
+            if request.use_real_roads:
+                route_geojson = await build_route_geojson(grouped_stops, route_indices)
+            viz = build_truck_visualization(load, ordered_stops, route_geojson)
 
             await self._publish_progress(
                 record,

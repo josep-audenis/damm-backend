@@ -20,6 +20,7 @@ from models.domain import (
     VizPallet,
 )
 from models.schemas import OptimizeRequest, TransportDetail
+from services.coordinates import enrich_stops_from_local_coordinates
 
 
 DEPOT_LAT = 41.5409
@@ -41,7 +42,7 @@ class Matrix:
 
 class OptimizationService:
     def optimize(self, transport: TransportDetail, request: OptimizeRequest) -> OptimizationResult:
-        grouped_stops = group_stops_by_customer(transport.stops)
+        grouped_stops = group_stops_by_customer(enrich_stops_from_local_coordinates(transport.stops))
         matrix = build_distance_time_matrix(grouped_stops)
         route_indices, solver_name = solve_route(
             grouped_stops,
@@ -238,6 +239,7 @@ def build_route_result(
     route_indices: list[int],
     matrix: Matrix,
     solver_name: str,
+    distance_source: str = "haversine",
 ) -> RouteResult:
     total_distance = sum(matrix.distance_km[a][b] for a, b in zip(route_indices, route_indices[1:]))
     total_time = sum(matrix.time_min[a][b] for a, b in zip(route_indices, route_indices[1:]))
@@ -254,7 +256,7 @@ def build_route_result(
         total_stops=len(ordered_stops),
         time_window_violations=find_time_window_violations(ordered_stops),
         has_tight_windows=any(stop.time_window is not None for stop in ordered_stops),
-        explanation=f"{solver_name}; orders grouped by customer before routing",
+        explanation=f"{solver_name}; {distance_source}; orders grouped by customer; returns to DDI depot",
     )
 
 
@@ -265,17 +267,30 @@ def build_load_plan(transport: TransportDetail, request: OptimizeRequest, ordere
     items_no_location: list[ProductLine] = []
 
     for stop in reversed(ordered_stops):
-        pallet_count = max(1, ceil(stop_pallet_demand(stop)))
-        for offset in range(pallet_count):
-            pallet = Pallet(
-                pallet_index=len(pallets),
-                pallet_id=f"PAL-{len(pallets) + 1:03d}",
-                stop_ids=[stop.stop_id],
-                total_weight_kg=round(stop_weight_kg(stop) / pallet_count, 2),
-                total_volume_l=round(stop_volume_l(stop) / pallet_count, 2),
-            )
-            pallets.append(pallet)
-            if offset == 0:
+        remaining_weight = stop_weight_kg(stop)
+        remaining_volume = stop_volume_l(stop)
+        first_pallet_for_stop = True
+        while remaining_weight > 0 or remaining_volume > 0:
+            pallet = find_pallet_with_capacity(pallets, remaining_weight, remaining_volume)
+            if pallet is None:
+                pallet = Pallet(
+                    pallet_index=len(pallets),
+                    pallet_id=f"PAL-{len(pallets) + 1:03d}",
+                )
+                pallets.append(pallet)
+            available_weight = max(0.0, PALLET_WEIGHT_KG - pallet.total_weight_kg)
+            available_volume = max(0.0, PALLET_VOLUME_L - pallet.total_volume_l)
+            placed_weight = min(remaining_weight, available_weight) if remaining_weight > 0 else 0.0
+            placed_volume = min(remaining_volume, available_volume) if remaining_volume > 0 else 0.0
+            if placed_weight <= 0 and placed_volume <= 0:
+                break
+            if stop.stop_id not in pallet.stop_ids:
+                pallet.stop_ids.append(stop.stop_id)
+            pallet.total_weight_kg = round(pallet.total_weight_kg + placed_weight, 2)
+            pallet.total_volume_l = round(pallet.total_volume_l + placed_volume, 2)
+            remaining_weight = round(max(0.0, remaining_weight - placed_weight), 2)
+            remaining_volume = round(max(0.0, remaining_volume - placed_volume), 2)
+            if first_pallet_for_stop:
                 for product in stop.products:
                     if product.warehouse_location is None:
                         items_no_location.append(product)
@@ -292,6 +307,7 @@ def build_load_plan(transport: TransportDetail, request: OptimizeRequest, ordere
                             stop_id=stop.stop_id,
                         )
                     )
+                first_pallet_for_stop = False
 
     pick_list.sort(key=lambda item: (item.warehouse_location, item.material_code))
     for sequence, item in enumerate(pick_list, start=1):
@@ -323,7 +339,22 @@ def build_load_plan(transport: TransportDetail, request: OptimizeRequest, ordere
     )
 
 
-def build_truck_visualization(load: LoadPlan, ordered_stops: list[DeliveryStop]) -> TruckVisualization:
+def find_pallet_with_capacity(pallets: list[Pallet], weight_kg: float, volume_l: float) -> Pallet | None:
+    for pallet in reversed(pallets):
+        if pallet.is_returnables:
+            continue
+        has_weight = pallet.total_weight_kg < PALLET_WEIGHT_KG
+        has_volume = pallet.total_volume_l < PALLET_VOLUME_L
+        if has_weight and has_volume and (weight_kg > 0 or volume_l > 0):
+            return pallet
+    return None
+
+
+def build_truck_visualization(
+    load: LoadPlan,
+    ordered_stops: list[DeliveryStop],
+    route_geojson: dict | None = None,
+) -> TruckVisualization:
     names = {stop.stop_id: stop.customer_name for stop in ordered_stops}
     colors = ["#2563eb", "#16a34a", "#f97316", "#dc2626", "#7c3aed", "#0891b2", "#4b5563"]
     viz_pallets = [
@@ -351,7 +382,7 @@ def build_truck_visualization(load: LoadPlan, ordered_stops: list[DeliveryStop])
                 products_summary=["estimated returnables"],
             )
         )
-    return TruckVisualization(pallets=viz_pallets)
+    return TruckVisualization(pallets=viz_pallets, route_geojson=route_geojson)
 
 
 def stop_pallet_demand(stop: DeliveryStop) -> float:
