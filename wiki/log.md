@@ -1,5 +1,9 @@
 # SmartTruck Wiki Log
 
+## [2026-05-09] update | Real data preprocessing contract
+
+Accepted the real data unit contract update for `TB`, `EST`, `PQ`, `TIR`, `BID`, and `ZPR`. Added `RouteSummary` to the data model contract for `GET /api/v1/data/routes`.
+
 ## [2026-05-09] lint | Wiki index reconciliation
 
 Removed stale root-level entries (`DATA_SCHEMA.md`, `DATA_MODELS.md`, `ALGORITHMS.md`, `BACKEND_PLAN.md`, `SPRINT_PLAN.md` — all deleted). Updated `index.md` and `CLAUDE.md` wiki table to reflect actual `wiki/` structure.
@@ -14,4 +18,3 @@ Key decisions:
 - Treat data models, API paths, enum values, and WebSocket messages as the most important coordination contract.
 - Use `/api/v1/optimize/full` plus `/ws/jobs/{job_id}` as the primary optimization workflow.
 - Keep backend deterministic; use OpenAI Agents SDK only for explanations and generated operational summaries.
-

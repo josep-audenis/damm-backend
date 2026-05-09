@@ -29,6 +29,12 @@ class ProductUnit(str, Enum):
     BRL = "BRL"
     TUB = "TUB"
     PAK = "PAK"
+    TB = "TB"
+    EST = "EST"
+    PQ = "PQ"
+    TIR = "TIR"
+    BID = "BID"
+    ZPR = "ZPR"
 
 
 class ProductCategory(str, Enum):
