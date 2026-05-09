@@ -39,6 +39,12 @@ class TransportSummary(BaseModel):
     truck_type: TruckType
 
 
+class RouteSummary(BaseModel):
+    route_code: str
+    transport_count: int
+    stop_count: int
+
+
 class TransportDetail(BaseModel):
     transport_id: str
     route_code: str

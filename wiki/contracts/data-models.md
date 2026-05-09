@@ -44,6 +44,12 @@ class ProductUnit(str, Enum):
     BRL = "BRL"
     TUB = "TUB"
     PAK = "PAK"
+    TB = "TB"
+    EST = "EST"
+    PQ = "PQ"
+    TIR = "TIR"
+    BID = "BID"
+    ZPR = "ZPR"
 
 class ProductCategory(str, Enum):
     BEER_BOTTLE = "beer_bottle"
@@ -278,6 +284,11 @@ class TransportSummary(BaseModel):
     stop_count: int
     truck_type: TruckType
 
+class RouteSummary(BaseModel):
+    route_code: str
+    transport_count: int
+    stop_count: int
+
 class CustomerDetail(BaseModel):
     customer_id: str
     name: str
@@ -348,4 +359,3 @@ type WsMessage =
 Adding optional fields is allowed.
 
 Renaming fields, changing enum values, changing endpoint paths, or changing WebSocket message `type` values requires a contract proposal in `wiki/decisions/`.
-

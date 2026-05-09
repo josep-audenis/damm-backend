@@ -17,8 +17,8 @@
 ## Decisions
 
 - [Decision Log](decisions/README.md): architectural decisions and contract proposals.
+- [Preserve Real Delivery Units](decisions/2026-05-09-real-data-units.md): accepted contract change for source delivery units found during Excel preprocessing.
 
 ## Log
 
 - [log.md](log.md): chronological wiki maintenance log.
-

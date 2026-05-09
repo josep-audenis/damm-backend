@@ -218,3 +218,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 .claude
+
+# Generated preprocessing checkpoints
+data/processed/
