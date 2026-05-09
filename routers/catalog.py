@@ -4,17 +4,18 @@ from models.catalog import (
     BootstrapResponse,
     CustomerCreate,
     CustomerRead,
+    GeocodeBatchResponse,
     MaterialCreate,
     MaterialRead,
     MaterialTypeCreate,
     MaterialTypeRead,
-    SourceDocumentRead,
     TruckCreate,
     TruckRead,
     WarehouseCreate,
     WarehouseRead,
 )
 from services.database import db_service
+from services.geocoding import geocode_location
 
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
@@ -31,8 +32,39 @@ def list_warehouses() -> list[WarehouseRead]:
 
 
 @router.post("/warehouses", response_model=WarehouseRead)
-def create_warehouse(payload: WarehouseCreate) -> WarehouseRead:
-    return WarehouseRead(**db_service.insert_row("warehouses", payload.model_dump()))
+async def create_warehouse(payload: WarehouseCreate) -> WarehouseRead:
+    data = payload.model_dump()
+    if data.get("lat") is None or data.get("lng") is None:
+        coordinates = await geocode_location(data)
+        if coordinates is not None:
+            data["lat"] = coordinates.lat
+            data["lng"] = coordinates.lng
+    return WarehouseRead(**db_service.insert_row("warehouses", data))
+
+
+@router.post("/warehouses/geocode-missing", response_model=GeocodeBatchResponse)
+async def geocode_missing_warehouses(limit: int = 25) -> GeocodeBatchResponse:
+    warehouses = [
+        row
+        for row in db_service.list_rows("warehouses", limit=1000000)
+        if row.get("lat") is None or row.get("lng") is None
+    ][:limit]
+
+    updated = 0
+    failed = 0
+    for warehouse in warehouses:
+        coordinates = await geocode_location(warehouse)
+        if coordinates is None:
+            failed += 1
+            continue
+        db_service.update_row(
+            "warehouses",
+            int(warehouse["id"]),
+            {"lat": coordinates.lat, "lng": coordinates.lng},
+        )
+        updated += 1
+
+    return GeocodeBatchResponse(processed=len(warehouses), updated=updated, failed=failed)
 
 
 @router.get("/trucks", response_model=list[TruckRead])
@@ -75,10 +107,34 @@ def list_customers() -> list[CustomerRead]:
 
 
 @router.post("/customers", response_model=CustomerRead)
-def create_customer(payload: CustomerCreate) -> CustomerRead:
-    return CustomerRead(**db_service.insert_row("customers", payload.model_dump()))
+async def create_customer(payload: CustomerCreate) -> CustomerRead:
+    data = payload.model_dump()
+    if data.get("lat") is None or data.get("lng") is None:
+        coordinates = await geocode_location(data)
+        if coordinates is not None:
+            data["lat"] = coordinates.lat
+            data["lng"] = coordinates.lng
+    return CustomerRead(**db_service.insert_row("customers", data))
 
 
-@router.get("/documents", response_model=list[SourceDocumentRead])
-def list_documents() -> list[SourceDocumentRead]:
-    return [SourceDocumentRead(**row) for row in db_service.list_rows("source_documents")]
+@router.post("/customers/geocode-missing", response_model=GeocodeBatchResponse)
+async def geocode_missing_customers(limit: int = 25) -> GeocodeBatchResponse:
+    customers = [
+        row
+        for row in db_service.list_rows("customers", limit=1000000)
+        if row.get("lat") is None or row.get("lng") is None
+    ][:limit]
+
+    updated = 0
+    failed = 0
+    for customer in customers:
+        coordinates = await geocode_location(customer)
+        if coordinates is None:
+            failed += 1
+            continue
+        patch = {"lat": coordinates.lat, "lng": coordinates.lng}
+        db_service.update_row("customers", int(customer["id"]), patch)
+        db_service.update_rows_by_field("delivery_stops", "customer_id", customer["id"], patch)
+        updated += 1
+
+    return GeocodeBatchResponse(processed=len(customers), updated=updated, failed=failed)
