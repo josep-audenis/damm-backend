@@ -58,6 +58,57 @@ Primary list item:
 TransportSummary
 ```
 
+### Import Orders From CSV
+
+```txt
+POST /api/v1/data/orders/import   (multipart/form-data)
+```
+
+Form fields:
+
+| Field | Type | Notes |
+|---|---|---|
+| `file` | file | CSV with header row. Required columns: `customer_id`, `material_id`, `quantity`, `sales_unit`. Optional column: `due_date`. Delimiter `;` or `,`. |
+| `due_date` | date | Default `today`. Used when a row has no `due_date` column. |
+
+`customer_id` and `material_id` are the UUID primary keys from `customers.id` and `materials.id`. The importer is strict: rows are inserted only when both UUIDs already exist in the database. Unknown ids are skipped — no rows are auto-created in `customers` or `materials`. A sample CSV that resolves against the seeded demo DB lives at `data/sample_orders.csv`.
+
+Response model:
+
+```txt
+OrderImportResponse {
+  status: "ok",
+  received: int,
+  inserted: int,
+  skipped: int,
+  unknown_customers: list[str],
+  unknown_materials: list[str],
+  errors: list[{ row: int, reason: str, raw: dict }],
+}
+```
+
+Skip reasons: `missing_required_fields`, `invalid_quantity`, `non_positive_quantity`, `unknown_customer`, `unknown_material`. The first 200 row errors are returned.
+
+Every inserted order row is tagged with `imported_via_csv: true` so it can be removed later without touching seeded rows.
+
+### Clear Imported Orders
+
+```txt
+DELETE /api/v1/data/orders/imported
+```
+
+Removes every `orders` row with `imported_via_csv == true`, plus any `delivery_lines` that reference those orders. Response model:
+
+```txt
+ClearImportedOrdersResponse {
+  status: "ok",
+  deleted_orders: int,
+  deleted_delivery_lines: int,
+}
+```
+
+This endpoint is idempotent — calling it on a clean DB returns zeros.
+
 ### Start Full Optimization
 
 ```txt

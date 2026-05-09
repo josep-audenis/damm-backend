@@ -37,6 +37,21 @@
           <p id="optStatus" class="status">Ready.</p>
         </section>
 
+        <section class="side-card">
+          <p class="eyebrow">Import orders</p>
+          <label>
+            CSV file
+            <input id="ordersCsv" type="file" accept=".csv,text/csv" />
+          </label>
+          <label>
+            Due date
+            <input id="ordersDueDate" type="date" />
+          </label>
+          <button id="importOrders" class="button primary">Import CSV</button>
+          <button id="clearImported" class="button danger subtle">Clear imported orders</button>
+          <p id="ordersStatus" class="status">Pick a CSV with columns customer_id, material_id, quantity, sales_unit (UUIDs from the customers and materials tables). Rows with unknown ids are skipped.</p>
+        </section>
+
         <button id="refreshTables" class="button primary">Refresh tables</button>
         <nav id="tableList" class="table-list" aria-label="Database tables"></nav>
       </aside>

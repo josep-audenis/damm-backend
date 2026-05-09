@@ -40,6 +40,7 @@ The frontend gets demo transports through:
 - `GET /api/v1/data/transports`
 - `GET /api/v1/data/transport/{transport_id}`
 - `GET /api/v1/data/customers/{customer_id}`
+- `POST /api/v1/data/orders/import` (multipart CSV upload, see `services/order_import.py`)
 
 The optimizer runs through:
 

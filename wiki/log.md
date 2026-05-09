@@ -1,5 +1,21 @@
 # SmartTruck Wiki Log
 
+## [2026-05-09] update | CSV order import switched to id-based schema
+
+Replaced the name/description matching in `POST /api/v1/data/orders/import` with strict UUID lookups. The CSV now requires the `orders` table's own column names: `customer_id`, `material_id`, `quantity`, `sales_unit` (plus optional `due_date`). Regenerated `data/sample_orders.csv` with UUIDs from the seeded DB and updated the tests, static demo hint, README, and API contract accordingly.
+
+## [2026-05-09] update | Clear imported orders endpoint and button
+
+Tagged every order row inserted through `POST /api/v1/data/orders/import` with `imported_via_csv: true`. Added `DELETE /api/v1/data/orders/imported` that removes those orders (and any `delivery_lines` that reference them) without touching seeded rows. Added a "Clear imported orders" button next to "Import CSV" in the static demo and covered the round-trip with tests so the seeded DB returns to baseline after import + clear.
+
+## [2026-05-09] update | Strict CSV order import (no auto-create)
+
+Reverted the JSON DB to the pre-import baseline (200 customers / 773 materials / 12,194 orders) and removed the `create_missing_materials` / `create_missing_customers` form fields from `POST /api/v1/data/orders/import`. The importer now skips rows whose customer or material is unknown and reports them via `unknown_customers` and `unknown_materials`. Updated the static demo, tests, README, and `api-contract.md`. Added a curated `data/sample_orders.csv` whose customers and materials all exist in the seeded DB.
+
+## [2026-05-09] update | CSV order import endpoint and demo UI button
+
+Added `POST /api/v1/data/orders/import` (multipart) backed by `services/order_import.py`. The importer parses `;`/`,` CSVs, matches customers by uppercase name and materials by uppercase description, auto-creates missing materials by default, and skips unknown customers unless explicitly enabled. Added `python-multipart` dependency, exposed `load`/`save`/`stage_insert` helpers on `db_service`, wired an Import CSV form into the static demo, and updated `api-contract.md` and `architecture.md`.
+
 ## [2026-05-09] query | Project context and implementation overview
 
 Reviewed the wiki contracts and backend implementation to summarize the Damm Smart Truck project, including FastAPI routing, JSON database storage, domain assembly, optimization flow, WebSocket jobs, static demo UI, and test coverage.
