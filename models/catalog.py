@@ -7,9 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class WarehouseBase(BaseModel):
-    code: str
     name: str
-    storage_center_code: str | None = None
     address: str | None = None
     postal_code: str | None = None
     city: str | None = None
@@ -26,12 +24,9 @@ class WarehouseRead(WarehouseBase):
 
 
 class TruckBase(BaseModel):
-    code: str
     plate: str | None = None
-    truck_type: str = "6pal"
     capacity_pallets: int = 6
     warehouse_id: int | None = None
-    active: bool = True
 
 
 class TruckCreate(TruckBase):
@@ -43,7 +38,6 @@ class TruckRead(TruckBase):
 
 
 class MaterialTypeBase(BaseModel):
-    code: str
     name: str
     description: str | None = None
 
@@ -57,13 +51,9 @@ class MaterialTypeRead(MaterialTypeBase):
 
 
 class MaterialBase(BaseModel):
-    code: str
     description: str
     base_unit: str | None = None
     material_type_id: int | None = None
-    manufacturer: str | None = None
-    manufacturer_code: str | None = None
-    product_hierarchy_code: str | None = None
     is_returnable: bool = False
 
 
@@ -76,14 +66,11 @@ class MaterialRead(MaterialBase):
 
 
 class CustomerBase(BaseModel):
-    code: str
     name: str
     name_2: str | None = None
     address: str | None = None
     postal_code: str | None = None
     city: str | None = None
-    payment_condition: str | None = None
-    service_notes: str | None = None
     lat: float | None = None
     lng: float | None = None
 

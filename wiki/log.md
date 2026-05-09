@@ -1,5 +1,9 @@
 # SmartTruck Wiki Log
 
+## [2026-05-09] update | Simplified JSON database schema
+
+Removed stored source identifiers and unused reservation fields from catalog tables: customer time windows no longer store `shift` or `is_closed`; customers, drivers, material types, materials, warehouses, delivery stops, and transports now rely on integer `id` for stored identity; manufacturer metadata, warehouse locations, and source document tables were removed; trucks now store only `id`, `plate`, `capacity_pallets`, and `warehouse_id`; order quantities moved from `delivery_lines` into the new `orders` table.
+
 ## [2026-05-09] ingest | Database schema documented
 
 Created `wiki/data/db-schema.md` from `services/database.py`. Documents all 13 tables (fields, types, FK relationships, natural keys, bootstrap row counts) and the ER diagram. Updated `wiki/index.md` with the new page.
