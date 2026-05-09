@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC
 from datetime import date as DateType
 from datetime import datetime, time
 from math import atan2, ceil, cos, radians, sin, sqrt
 from uuid import uuid4
+
+log = logging.getLogger(__name__)
 
 from models.domain import (
     DeliveryStop,
@@ -29,13 +32,77 @@ from services.db_provider import db_service
 
 DEPOT_LAT = 41.5409
 DEPOT_LNG = 2.2134
-PALLET_VOLUME_L = 120.0 * 80.0 * 170.0 / 1000.0
 PALLET_WEIGHT_KG = 700.0
 PALLET_SLOT_BY_TRUCK = {
     TruckType.TRUCK_6: 6,
     TruckType.TRUCK_8: 8,
     TruckType.VAN: 2,
 }
+
+# Box-equivalent capacity system
+# One pallet holds PALLET_CAPACITY_UNITS "standard box equivalents"
+PALLET_CAPACITY_UNITS = 45.0
+
+BOX_SIZE_NORMAL = 1.0   # standard case (CAJ of bottles, water, food boxes…)
+BOX_SIZE_SMALL  = 0.8   # can-box, sachet box, small pack
+BOX_SIZE_BARREL = 4.0   # keg / barrel / gas cylinder
+
+# Per-sales-unit size override (takes priority over material-type classification)
+_UNIT_SIZE: dict[str, float] = {
+    "BRL": BOX_SIZE_BARREL,   # barrel
+    "CAJ": BOX_SIZE_NORMAL,   # case
+    "PAK": BOX_SIZE_NORMAL,   # pack
+    "EST": BOX_SIZE_NORMAL,   # display-box
+    "PQ":  BOX_SIZE_SMALL,    # small packet
+    "LAT": BOX_SIZE_SMALL,    # can (lata)
+    "TB":  BOX_SIZE_SMALL,    # tube
+    "BOT": 0.1,               # individual bottle (~1/10 of a case)
+    "UN":  0.2,               # individual unit  (~1/5 of a case)
+    "BID": 1.5,               # bidon (large container)
+    "ZPR": BOX_SIZE_NORMAL,   # SAP price-unit → treat as normal box
+}
+
+# Material-type name → box size (used when sales_unit not in _UNIT_SIZE overrides)
+_TYPE_BOX_SIZE: dict[str, float] = {
+    "BEER BARREL":      BOX_SIZE_BARREL,
+    "BEER BOTTLE":      BOX_SIZE_NORMAL,
+    "WATER":            BOX_SIZE_NORMAL,
+    "SOFT DRINK":       BOX_SIZE_SMALL,   # mostly cans
+    "DAIRY":            BOX_SIZE_NORMAL,
+    "COFFEE":           BOX_SIZE_SMALL,   # small bags/sachets
+    "WINE & SPIRITS":   BOX_SIZE_NORMAL,
+    "FOOD":             BOX_SIZE_NORMAL,
+    "DISPOSABLE":       BOX_SIZE_SMALL,
+    "GAS":              BOX_SIZE_BARREL,
+    "RETURNABLE EMPTY": BOX_SIZE_SMALL,   # empty crates
+}
+
+
+def classify_box_size(material_name: str, type_name: str, sales_unit: str) -> float:
+    """Return box-equivalent size for one unit of this material in this sales unit."""
+    # Sales-unit override wins first
+    if sales_unit in _UNIT_SIZE:
+        size = _UNIT_SIZE[sales_unit]
+        # BRL always barrel regardless of type
+        if sales_unit == "BRL":
+            return BOX_SIZE_BARREL
+        # For CAJ/PAK/EST etc, refine by material name/type
+        if sales_unit not in ("CAJ", "PAK", "EST", "ZPR"):
+            return size
+
+    name = (material_name or "").upper()
+
+    # Name-based barrel detection
+    barrel_keywords = ("BARRIL", "BARREL", "TANQUETA", "KEG", "CARBONICO")
+    if any(kw in name for kw in barrel_keywords):
+        return BOX_SIZE_BARREL
+
+    # Name-based can detection (lata/latas)
+    if "LATA" in name or sales_unit == "LAT":
+        return BOX_SIZE_SMALL
+
+    # Type-based fallback
+    return _TYPE_BOX_SIZE.get(type_name, BOX_SIZE_NORMAL)
 
 
 @dataclass(frozen=True)
@@ -73,9 +140,20 @@ class OptimizationService:
             viz=viz,
         )
 
-    def optimize_orders(self, request: OptimizeRequest, job_id: str | None = None) -> OptimizationResult:
+    async def optimize_orders(self, request: OptimizeRequest, job_id: str | None = None) -> OptimizationResult:
         plan = build_order_plan(request)
-        matrix = build_distance_time_matrix(plan.stops)
+        matrix = None
+        distance_source = "haversine"
+        if request.use_real_roads:
+            from services.road_routing import build_road_matrix
+            matrix = await build_road_matrix(plan.stops)
+            if matrix is not None:
+                distance_source = "osrm-road-network"
+                log.info("optimize_orders: using OSRM road matrix")
+            else:
+                log.warning("optimize_orders: OSRM road matrix unavailable, falling back to haversine")
+        if matrix is None:
+            matrix = build_distance_time_matrix(plan.stops)
         route_indices_by_vehicle, solver_name = solve_multi_vehicle_route(
             plan.stops,
             matrix,
@@ -86,9 +164,28 @@ class OptimizationService:
         routes: list[RouteResult] = []
         loads: list[LoadPlan] = []
         generated_transport_ids: list[str] = []
+        geojson_by_vehicle: list[dict | None] = []
+        if request.use_real_roads:
+            from services.road_routing import build_route_geojson
+            for route_indices in route_indices_by_vehicle:
+                if len(route_indices) <= 2:
+                    geojson_by_vehicle.append(None)
+                    continue
+                geojson = await build_route_geojson(plan.stops, route_indices)
+                geojson_by_vehicle.append(geojson)
+        else:
+            geojson_by_vehicle = [None] * len(route_indices_by_vehicle)
+
         for vehicle_index, route_indices in enumerate(route_indices_by_vehicle):
             if len(route_indices) <= 2:
+                log.debug("vehicle %d: empty route, skipping", vehicle_index)
                 continue
+            log.info("vehicle %d (%s): %d stops, demand=%.2f pallets",
+                vehicle_index,
+                plan.trucks[vehicle_index].get("plate", "?"),
+                len(route_indices) - 2,
+                sum(stop_pallet_demand(plan.stops[i - 1]) for i in route_indices if i != 0),
+            )
             truck = plan.trucks[vehicle_index]
             ordered_stops = apply_route(plan.stops, route_indices)
             transport = TransportDetail(
@@ -96,15 +193,16 @@ class OptimizationService:
                 route_code=f"OPT-{vehicle_index + 1:02d}",
                 driver_id="",
                 driver_name=truck.get("plate") or f"Truck {vehicle_index + 1}",
-                date=request.date or plan.date,
+                date=plan.date,
                 truck_type=truck_type_from_capacity(plan.truck_capacities[vehicle_index]),
                 stops=ordered_stops,
             )
-            route = build_route_result(transport, request, ordered_stops, route_indices, matrix, solver_name)
+            route = build_route_result(transport, request, ordered_stops, route_indices, matrix, solver_name, distance_source)
             route.explanation = (
-                f"{solver_name}; multi-vehicle CVRPTW; open orders grouped by customer; "
+                f"{solver_name}; {distance_source}; multi-vehicle CVRPTW; open orders grouped by customer; "
                 "generated routes/transports from optimization"
             )
+            route.route_geojson = geojson_by_vehicle[vehicle_index]
             load = build_load_plan(transport, request, ordered_stops)
             routes.append(route)
             loads.append(load)
@@ -113,6 +211,9 @@ class OptimizationService:
 
         now = datetime.now(UTC)
         status_id = ",".join(generated_transport_ids) if generated_transport_ids else "planned"
+        viz = None
+        if routes and loads:
+            viz = build_truck_visualization(loads[0], routes[0].ordered_stops, routes[0].route_geojson)
         return OptimizationResult(
             job_id=job_id or uuid4().hex[:8],
             transport_id=status_id,
@@ -123,7 +224,7 @@ class OptimizationService:
             routes=routes,
             load=loads[0] if loads else None,
             loads=loads,
-            viz=build_truck_visualization(loads[0], routes[0].ordered_stops) if routes and loads else None,
+            viz=viz,
         )
 
 
@@ -138,6 +239,7 @@ class OrderPlan:
 
 
 def build_order_plan(request: OptimizeRequest) -> OrderPlan:
+    log.info("build_order_plan: loading warehouses/trucks")
     warehouses = db_service.list_rows("warehouses", limit=10000)
     warehouse = (
         next((row for row in warehouses if row.get("id") == request.warehouse_id), None)
@@ -150,31 +252,45 @@ def build_order_plan(request: OptimizeRequest) -> OrderPlan:
         trucks = [truck for truck in trucks if truck.get("id") in truck_id_set]
     if not trucks:
         trucks = [{"id": None, "plate": "virtual-6pal", "capacity_pallets": PALLET_SLOT_BY_TRUCK[TruckType.TRUCK_6]}]
+    log.info("build_order_plan: %d trucks available", len(trucks))
 
+    log.info("build_order_plan: loading customers/materials/dimensions")
     customers = {row["id"]: row for row in db_service.list_rows("customers", limit=1000000)}
     materials = {row["id"]: row for row in db_service.list_rows("materials", limit=1000000)}
     dimensions = material_dimensions_by_material()
+    mat_type_names = material_type_name_by_material_id()
     windows = customer_windows_by_customer()
+    log.info("build_order_plan: %d customers, %d materials, %d dimension rows", len(customers), len(materials), len(dimensions))
+
+    from datetime import timedelta
+    target_date = request.date or DateType.today()
+    date_range_days = getattr(request, "date_range_days", 1)
+    valid_dates = {
+        (target_date + timedelta(days=i)).isoformat()
+        for i in range(date_range_days)
+    }
+    log.info("build_order_plan: filtering orders for dates=%s", sorted(valid_dates))
     orders = [
         row
         for row in db_service.list_rows("orders", limit=1000000)
-        if not row.get("delivered_flag") and (request.date is None or row.get("due_date") == request.date.isoformat())
+        if not row.get("delivered_flag") and row.get("due_date") in valid_dates
     ][: request.max_orders]
+    log.info("build_order_plan: %d orders across %d day(s)", len(orders), date_range_days)
     if not orders:
-        raise ValueError("No open orders match optimization request")
+        raise ValueError(f"No open orders for {target_date.isoformat()} (+{date_range_days-1}d). Try a different date.")
 
     by_customer: dict[str, list[dict]] = {}
     for order in orders:
         by_customer.setdefault(order["customer_id"], []).append(order)
 
-    weekday = (request.date or DateType.today()).isoweekday()
+    weekday = target_date.isoweekday()
     stops: list[DeliveryStop] = []
     order_ids_by_stop_id: dict[str, list[str]] = {}
     for sequence, (customer_id, customer_orders) in enumerate(by_customer.items(), start=1):
         customer = customers.get(customer_id)
         if customer is None:
             continue
-        products = [product_line_from_order(order, materials, dimensions) for order in customer_orders]
+        products = [product_line_from_order(order, materials, dimensions, mat_type_names) for order in customer_orders]
         time_window = windows.get((customer_id, weekday))
         stop_id = f"plan-{customer_id}"
         order_ids_by_stop_id[stop_id] = [order["id"] for order in customer_orders]
@@ -198,8 +314,16 @@ def build_order_plan(request: OptimizeRequest) -> OrderPlan:
     if not stops:
         raise ValueError("Open orders do not reference known customers")
     capacities = [int(truck.get("capacity_pallets") or PALLET_SLOT_BY_TRUCK[TruckType.TRUCK_6]) for truck in trucks]
+    total_demand = sum(stop_pallet_demand(s) for s in stops)
+    total_capacity = sum(capacities)
+    log.info(
+        "build_order_plan: %d stops, total demand=%.1f pallets, total capacity=%d pallets across %d trucks",
+        len(stops), total_demand, total_capacity, len(trucks),
+    )
+    for s in stops:
+        log.debug("  stop %s: demand=%.2f pallets, %d products", s.customer_name, stop_pallet_demand(s), len(s.products))
     return OrderPlan(
-        date=request.date or DateType.today(),
+        date=target_date,
         warehouse=warehouse,
         trucks=trucks,
         truck_capacities=capacities,
@@ -208,38 +332,87 @@ def build_order_plan(request: OptimizeRequest) -> OrderPlan:
     )
 
 
-def product_line_from_order(order: dict, materials: dict[str, dict], dimensions: dict[str, ProductDimensions]) -> ProductLine:
+_MATERIAL_TYPE_TO_CATEGORY: dict[str, ProductCategory] = {
+    "BEER BOTTLE": ProductCategory.BEER_BOTTLE,
+    "BEER BARREL": ProductCategory.BEER_BARREL,
+    "WATER": ProductCategory.WATER,
+    "SOFT DRINK": ProductCategory.SOFT_DRINK,
+    "DAIRY": ProductCategory.DAIRY,
+    "COFFEE": ProductCategory.COFFEE,
+    "WINE & SPIRITS": ProductCategory.WINE_SPIRITS,
+    "FOOD": ProductCategory.FOOD,
+    "DISPOSABLE": ProductCategory.DISPOSABLE,
+    "GAS": ProductCategory.GAS,
+    "RETURNABLE EMPTY": ProductCategory.RETURNABLE_EMPTY,
+}
+
+
+def product_line_from_order(
+    order: dict,
+    materials: dict[str, dict],
+    dimensions: dict[tuple[str, str], ProductDimensions],
+    mat_type_names: dict[str, str] | None = None,
+) -> ProductLine:
     material = materials.get(order.get("material_id"), {})
+    mat_id = str(order.get("material_id") or "")
+    sales_unit = str(order.get("sales_unit") or "UN")
+    type_name = (mat_type_names or {}).get(mat_id, "FOOD")
+    category = _MATERIAL_TYPE_TO_CATEGORY.get(type_name, ProductCategory.FOOD)
     try:
-        unit = ProductUnit(str(order.get("sales_unit") or "UN"))
+        unit = ProductUnit(sales_unit)
     except ValueError:
         unit = ProductUnit.UN
+    box_size = classify_box_size(material.get("description", ""), type_name, sales_unit)
     return ProductLine(
-        material_code=str(order.get("material_id")),
-        description=material.get("description") or str(order.get("material_id")),
+        material_code=mat_id,
+        description=material.get("description") or mat_id,
         quantity=int(float(order.get("quantity") or 0)),
         unit=unit,
-        category=ProductCategory.FOOD,
+        category=category,
         is_returnable=bool(material.get("is_returnable")),
-        dimensions=dimensions.get(order.get("material_id")) or ProductDimensions(),
+        dimensions=ProductDimensions(volume_l=box_size),
     )
 
 
-def material_dimensions_by_material() -> dict[str, ProductDimensions]:
-    output = {}
+def material_dimensions_by_material() -> dict[tuple[str, str], ProductDimensions]:
+    """Returns dimensions keyed by (material_id, unit). Only stores rows with usable volume."""
+    by_unit: dict[tuple[str, str], ProductDimensions] = {}
+    pal_rows: list[dict] = []
     for row in db_service.list_rows("material_dimensions", limit=1000000):
         material_id = row.get("material_id")
-        if material_id in output:
+        unit = str(row.get("unit") or "UN")
+        vol = row.get("volume_l")
+        if vol is None and row.get("length_cm") and row.get("width_cm") and row.get("height_cm"):
+            vol = float(row["length_cm"]) * float(row["width_cm"]) * float(row["height_cm"]) / 1000.0
+        if unit == "PAL":
+            pal_rows.append(row)
             continue
-        output[material_id] = ProductDimensions(
-            length_cm=float(row.get("length_cm") or 40.0),
-            width_cm=float(row.get("width_cm") or 30.0),
-            height_cm=float(row.get("height_cm") or 25.0),
-            volume_l=row.get("volume_l"),
-            weight_gross_kg=float(row.get("weight_gross_kg") or 15.0),
-            weight_net_kg=row.get("weight_net_kg"),
-        )
-    return output
+        if vol is not None and (material_id, unit) not in by_unit:
+            by_unit[(material_id, unit)] = ProductDimensions(
+                length_cm=float(row.get("length_cm") or 40.0),
+                width_cm=float(row.get("width_cm") or 30.0),
+                height_cm=float(row.get("height_cm") or 25.0),
+                volume_l=float(vol),
+                weight_gross_kg=float(row.get("weight_gross_kg") or 15.0),
+                weight_net_kg=row.get("weight_net_kg"),
+            )
+    # PAL rows: derive per-unit volume via counter (units per pallet)
+    for row in pal_rows:
+        material_id = row.get("material_id")
+        vol = row.get("volume_l")
+        counter = row.get("counter")
+        if vol and counter and int(counter) > 0:
+            per_unit_vol = float(vol) / int(counter)
+            for unit in ("CAJ", "BOT", "UN", "BRL", "LAT", "PAK", "PQ", "EST"):
+                key = (material_id, unit)
+                if key not in by_unit:
+                    by_unit[key] = ProductDimensions(volume_l=per_unit_vol)
+    return by_unit
+
+
+def material_type_name_by_material_id() -> dict[str, str]:
+    types = {t["id"]: t["name"] for t in db_service.list_rows("material_types", limit=1000)}
+    return {m["id"]: types.get(m.get("material_type_id", ""), "FOOD") for m in db_service.list_rows("materials", limit=1000000)}
 
 
 def customer_windows_by_customer() -> dict[tuple[str, int], object]:
@@ -265,10 +438,22 @@ def solve_multi_vehicle_route(
     respect_time_windows: bool,
     time_limit_s: int,
 ) -> tuple[list[list[int]], str]:
+    log.info(
+        "solve_multi_vehicle_route: %d stops, %d trucks, capacities=%s, time_windows=%s",
+        len(stops), len(truck_capacities), truck_capacities, respect_time_windows,
+    )
+    stop_demands = [round(stop_pallet_demand(s), 2) for s in stops]
+    log.info("solve_multi_vehicle_route: per-stop demands: %s", stop_demands)
     ortools_routes = solve_multi_with_ortools(stops, matrix, truck_capacities, respect_time_windows, time_limit_s)
     if ortools_routes is not None:
+        used = [i for i, r in enumerate(ortools_routes) if len(r) > 2]
+        log.info("solve_multi_vehicle_route: or-tools used %d/%d trucks: %s", len(used), len(truck_capacities), used)
         return ortools_routes, "or-tools"
-    return greedy_multi_vehicle_routes(stops, matrix, truck_capacities), "greedy-multi-vehicle-2opt"
+    log.warning("solve_multi_vehicle_route: or-tools returned None, falling back to greedy")
+    result = greedy_multi_vehicle_routes(stops, matrix, truck_capacities)
+    used = [i for i, r in enumerate(result) if len(r) > 2]
+    log.info("solve_multi_vehicle_route: greedy used %d/%d trucks", len(used), len(truck_capacities))
+    return result, "greedy-multi-vehicle-2opt"
 
 
 def solve_multi_with_ortools(
@@ -360,7 +545,17 @@ def greedy_multi_vehicle_routes(stops: list[DeliveryStop], matrix: Matrix, truck
         route.append(0)
         routes.append(two_opt_improve(route, matrix.time_min))
     if unvisited:
-        raise ValueError(f"{len(unvisited)} customer stops do not fit available truck capacity")
+        # Overflow stops: force each onto whichever truck has most remaining capacity
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("%d stops overflow truck capacity; forcing onto least-loaded trucks", len(unvisited))
+        for node in sorted(unvisited):
+            loads = [
+                sum(stop_pallet_demand(stops[routes[i][j] - 1]) for j in range(1, len(routes[i]) - 1))
+                for i in range(len(routes))
+            ]
+            least_loaded = min(range(len(routes)), key=lambda i: loads[i])
+            routes[least_loaded].insert(-1, node)
     return routes
 
 
@@ -597,34 +792,29 @@ def build_route_result(
 
 
 def build_load_plan(transport: TransportDetail, request: OptimizeRequest, ordered_stops: list[DeliveryStop]) -> LoadPlan:
-    pallet_slots_total = PALLET_SLOT_BY_TRUCK.get(request.truck_type, 6)
+    pallet_slots_total = PALLET_SLOT_BY_TRUCK.get(transport.truck_type, PALLET_SLOT_BY_TRUCK.get(request.truck_type, 6))
     pallets: list[Pallet] = []
     pick_list: list[PickInstruction] = []
     items_no_location: list[ProductLine] = []
 
     for stop in reversed(ordered_stops):
-        remaining_weight = stop_weight_kg(stop)
         remaining_volume = stop_volume_l(stop)
         first_pallet_for_stop = True
-        while remaining_weight > 0 or remaining_volume > 0:
-            pallet = find_pallet_with_capacity(pallets, remaining_weight, remaining_volume)
+        while remaining_volume > 0:
+            pallet = find_pallet_with_capacity(pallets, remaining_volume)
             if pallet is None:
                 pallet = Pallet(
                     pallet_index=len(pallets),
                     pallet_id=f"PAL-{len(pallets) + 1:03d}",
                 )
                 pallets.append(pallet)
-            available_weight = max(0.0, PALLET_WEIGHT_KG - pallet.total_weight_kg)
-            available_volume = max(0.0, PALLET_VOLUME_L - pallet.total_volume_l)
-            placed_weight = min(remaining_weight, available_weight) if remaining_weight > 0 else 0.0
-            placed_volume = min(remaining_volume, available_volume) if remaining_volume > 0 else 0.0
-            if placed_weight <= 0 and placed_volume <= 0:
+            available_volume = max(0.0, PALLET_CAPACITY_UNITS - pallet.total_volume_l)
+            placed_volume = min(remaining_volume, available_volume)
+            if placed_volume <= 0:
                 break
             if stop.stop_id not in pallet.stop_ids:
                 pallet.stop_ids.append(stop.stop_id)
-            pallet.total_weight_kg = round(pallet.total_weight_kg + placed_weight, 2)
             pallet.total_volume_l = round(pallet.total_volume_l + placed_volume, 2)
-            remaining_weight = round(max(0.0, remaining_weight - placed_weight), 2)
             remaining_volume = round(max(0.0, remaining_volume - placed_volume), 2)
             if first_pallet_for_stop:
                 for product in stop.products:
@@ -661,7 +851,7 @@ def build_load_plan(transport: TransportDetail, request: OptimizeRequest, ordere
     total_units = sum(product.quantity for stop in ordered_stops for product in stop.products)
     return LoadPlan(
         transport_id=transport.transport_id,
-        truck_type=request.truck_type,
+        truck_type=transport.truck_type,
         date=request.date or transport.date,
         pallets=pallets,
         pick_list=pick_list,
@@ -670,18 +860,16 @@ def build_load_plan(transport: TransportDetail, request: OptimizeRequest, ordere
         total_units_delivery=total_units,
         total_volume_delivery_l=round(sum(stop_volume_l(stop) for stop in ordered_stops), 2),
         total_weight_delivery_kg=round(sum(stop_weight_kg(stop) for stop in ordered_stops), 2),
-        pallet_slots_used=len(pallets) + (1 if return_pallet else 0),
+        pallet_slots_used=len(pallets),
         pallet_slots_total=pallet_slots_total,
     )
 
 
-def find_pallet_with_capacity(pallets: list[Pallet], weight_kg: float, volume_l: float) -> Pallet | None:
+def find_pallet_with_capacity(pallets: list[Pallet], volume_l: float) -> Pallet | None:
     for pallet in reversed(pallets):
         if pallet.is_returnables:
             continue
-        has_weight = pallet.total_weight_kg < PALLET_WEIGHT_KG
-        has_volume = pallet.total_volume_l < PALLET_VOLUME_L
-        if has_weight and has_volume and (weight_kg > 0 or volume_l > 0):
+        if pallet.total_volume_l < PALLET_CAPACITY_UNITS and volume_l > 0:
             return pallet
     return None
 
@@ -699,7 +887,7 @@ def build_truck_visualization(
             label=names.get(pallet.stop_ids[0], pallet.pallet_id) if pallet.stop_ids else pallet.pallet_id,
             color=colors[index % len(colors)],
             position={"x": float(index % 2) * 90.0, "y": float(index // 2) * 130.0, "z": 0.0},
-            dims={"l": 120.0, "w": 80.0, "h": max(30.0, min(170.0, pallet.total_volume_l / 9.6))},
+            dims={"l": 120.0, "w": 80.0, "h": max(30.0, min(170.0, pallet.total_volume_l / PALLET_CAPACITY_UNITS * 170.0))},
             stop_ids=pallet.stop_ids,
             products_summary=[],
         )
@@ -722,24 +910,33 @@ def build_truck_visualization(
 
 
 def stop_pallet_demand(stop: DeliveryStop) -> float:
-    volume_ratio = stop_volume_l(stop) / PALLET_VOLUME_L
-    weight_ratio = stop_weight_kg(stop) / PALLET_WEIGHT_KG
-    return max(volume_ratio, weight_ratio, 0.01)
+    """Fractional pallet slots needed: total box-equivalents / PALLET_CAPACITY_UNITS."""
+    return max(stop_box_units(stop) / PALLET_CAPACITY_UNITS, 0.01)
 
 
+def stop_box_units(stop: DeliveryStop) -> float:
+    """Total box-equivalent units for all products at this stop."""
+    return sum(product_box_size(p) * p.quantity for p in stop.products)
+
+
+# Keep alias so load_plan code that calls stop_volume_l still works
 def stop_volume_l(stop: DeliveryStop) -> float:
-    return sum(product_volume_l(product) * product.quantity for product in stop.products)
+    return stop_box_units(stop)
 
 
 def stop_weight_kg(stop: DeliveryStop) -> float:
     return sum(product_weight_kg(product) * product.quantity for product in stop.products)
 
 
-def product_volume_l(product: ProductLine) -> float:
+def product_box_size(product: ProductLine) -> float:
+    """Box-equivalent size for one unit of this product (stored in dimensions.volume_l)."""
     dims = product.dimensions or ProductDimensions()
-    if dims.volume_l is not None:
-        return dims.volume_l
-    return dims.length_cm * dims.width_cm * dims.height_cm / 1000.0
+    return dims.volume_l if dims.volume_l is not None else BOX_SIZE_NORMAL
+
+
+# Keep alias used by load_plan
+def product_volume_l(product: ProductLine) -> float:
+    return product_box_size(product)
 
 
 def product_weight_kg(product: ProductLine) -> float:

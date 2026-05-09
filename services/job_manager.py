@@ -112,7 +112,7 @@ class JobManager:
                     25,
                     "Loading open orders, customers, trucks, and constraints...",
                 )
-                result = optimization_service.optimize_orders(request, job_id=job_id)
+                result = await optimization_service.optimize_orders(request, job_id=job_id)
                 record.result = result
                 if result.route is not None:
                     await self._publish(record, WsPartialResult(job_id=job_id, route=result.route, timestamp=datetime.now(UTC)))
@@ -228,6 +228,11 @@ class JobManager:
             await self._publish(record, WsResult(job_id=job_id, result=result, timestamp=datetime.now(UTC)))
             await self._publish(record, WsDone(job_id=job_id, timestamp=datetime.now(UTC)))
         except Exception as exc:
+            import logging
+            import traceback
+            logging.getLogger(__name__).error(
+                "Job %s failed: %s\n%s", job_id, exc, traceback.format_exc()
+            )
             await self._publish_error(record, "OPTIMIZATION_ERROR", str(exc))
 
     async def _publish_progress(self, record: JobRecord, phase: str, pct: int, message: str) -> None:

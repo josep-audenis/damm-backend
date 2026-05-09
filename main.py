@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -5,6 +7,12 @@ from fastapi.staticfiles import StaticFiles
 
 from routers import catalog, data, db, jobs, optimize
 from services.db_provider import db_service
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 
 app = FastAPI(

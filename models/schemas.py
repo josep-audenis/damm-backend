@@ -18,13 +18,14 @@ from models.domain import (
 class OptimizeRequest(BaseModel):
     transport_id: str | None = None
     date: DateType | None = None
+    date_range_days: int = Field(default=1, ge=1, le=14, description="Include orders from date up to date+N days")
     warehouse_id: str | None = None
     truck_ids: list[str] | None = None
     persist_plan: bool = True
     max_orders: int = Field(default=500, ge=1, le=5000)
     truck_type: TruckType = TruckType.TRUCK_6
     use_real_roads: bool = False
-    respect_time_windows: bool = True
+    respect_time_windows: bool = False
     include_returnables: bool = True
     solver_time_limit_s: int = Field(default=15, ge=5, le=60)
 
