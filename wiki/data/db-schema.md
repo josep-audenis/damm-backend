@@ -206,6 +206,7 @@ One row per material quantity ordered by a customer for a due date. Sourced from
 | `material_id` | int | FK → materials.id |
 | `quantity` | float | Quantity in `sales_unit` |
 | `sales_unit` | str | Source unit such as `PAL`, `CAJ`, `UN` |
+| `delivered_flag` | bool | `false` when pending delivery, `true` after delivered |
 
 ---
 
@@ -246,22 +247,24 @@ materials ───────────────┤
 
 ---
 
-## Bootstrap Row Counts (typical after full Excel import)
+## Checked-in Demo Row Counts
 
-| Table | Approx rows |
+The checked-in `data/app_db.json` is reduced for demo use. It keeps 200 randomly selected customers with complete address fields and no `S/N` addresses, plus only related rows.
+
+| Table | Rows |
 |-------|-------------|
 | warehouses | 1 |
 | material_types | 11 |
-| materials | 1,489 |
-| material_dimensions | 9,359 |
-| customers | 1,203 |
-| customer_time_windows | 535 |
+| materials | 773 |
+| material_dimensions | 5,188 |
+| customers | 200 |
+| customer_time_windows | 97 |
 | drivers | 18 |
 | routes | 18 |
-| trucks | 1 in the checked-in DB; Excel bootstrap does not create trucks |
-| transports | 889 |
-| orders | 66,213 |
-| delivery_stops | 8,927 |
-| delivery_lines | 66,213 |
+| trucks | 1 |
+| transports | 598 |
+| orders | 12,194 |
+| delivery_stops | 1,598 |
+| delivery_lines | 12,194 |
 
 `warehouse_locations`, `source_documents`, and `source_document_lines` are obsolete and are removed by database migration.

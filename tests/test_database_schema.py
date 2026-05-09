@@ -183,6 +183,7 @@ def test_database_service_migrates_removed_tables_and_fields(tmp_path: Path) -> 
         "material_id": 1,
         "quantity": 2.0,
         "sales_unit": "CAJ",
+        "delivered_flag": False,
     }
     assert migrated["tables"]["delivery_lines"][0] == {
         "id": 1,
@@ -299,6 +300,7 @@ def test_bootstrap_helpers_keep_source_keys_out_of_stored_rows(tmp_path: Path) -
             "material_id": 1,
             "quantity": 2.0,
             "sales_unit": "CAJ",
+            "delivered_flag": False,
         }
     ]
     assert db["tables"]["delivery_stops"] == [

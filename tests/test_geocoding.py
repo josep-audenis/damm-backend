@@ -1,4 +1,6 @@
-from services.geocoding import _coordinates_from_payload, build_location_queries, build_location_query
+import pytest
+
+from services.geocoding import _coordinates_from_payload, build_location_queries, build_location_query, geocode_location
 
 
 def test_build_location_query_normalizes_spanish_postal_code() -> None:
@@ -50,3 +52,41 @@ def test_coordinates_from_payload_maps_nominatim_lon_to_lng() -> None:
 def test_coordinates_from_payload_rejects_out_of_range_values() -> None:
     assert _coordinates_from_payload([{"lat": "141.5409", "lon": "2.2134"}]) is None
     assert _coordinates_from_payload([{"lat": "41.5409", "lon": "202.2134"}]) is None
+
+
+@pytest.mark.anyio
+async def test_geocode_location_can_disable_fallback_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    requested_queries: list[str] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict[str, str]]:
+            return []
+
+    class FakeClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def get(self, _url: str, params: dict[str, object], headers: dict[str, str]) -> FakeResponse:
+            requested_queries.append(str(params["q"]))
+            return FakeResponse()
+
+    monkeypatch.setattr("services.geocoding.httpx.AsyncClient", FakeClient)
+
+    await geocode_location(
+        {
+            "name": "DDI Mollet",
+            "city": "Mollet del Vallès",
+        },
+        use_fallbacks=False,
+    )
+
+    assert requested_queries == ["DDI Mollet, Mollet del Vallès, Spain"]

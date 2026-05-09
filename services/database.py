@@ -190,6 +190,10 @@ class DatabaseService:
             if "lng" not in row:
                 row["lng"] = None
                 changed = True
+        for row in db["tables"].get("orders", []):
+            if "delivered_flag" not in row:
+                row["delivered_flag"] = False
+                changed = True
         return changed
 
     def _dedupe_warehouses(self, db: dict[str, Any]) -> bool:
@@ -253,6 +257,7 @@ class DatabaseService:
                 "material_id": line.get("material_id"),
                 "quantity": line.get("quantity"),
                 "sales_unit": line.get("sales_unit"),
+                "delivered_flag": False,
             }
             db["tables"]["orders"].append(order)
             line["order_id"] = order["id"]
@@ -582,6 +587,7 @@ class DatabaseService:
                         "material_id": material_id,
                         "quantity": float(line["Cantidad entrega"]) if pd.notna(line["Cantidad entrega"]) else 0.0,
                         "sales_unit": _clean_text(line["Un.medida venta"]),
+                        "delivered_flag": False,
                     }
                     db["tables"]["orders"].append(order)
                     db["tables"]["delivery_lines"].append(

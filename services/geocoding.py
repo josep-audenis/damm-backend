@@ -79,8 +79,16 @@ def _coordinates_from_payload(payload: list[dict[str, Any]]) -> Coordinates | No
     return coordinates
 
 
-async def geocode_location(row: dict[str, Any], timeout_s: float = 5.0) -> Coordinates | None:
-    queries = build_location_queries(row)
+async def geocode_location(
+    row: dict[str, Any],
+    timeout_s: float = 5.0,
+    use_fallbacks: bool = True,
+) -> Coordinates | None:
+    if use_fallbacks:
+        queries = build_location_queries(row)
+    else:
+        query = build_location_query(row)
+        queries = [query] if query is not None else []
     if not queries:
         return None
 
