@@ -456,6 +456,18 @@ class DatabaseService:
             self._save(db)
         return updated
 
+    def load(self) -> dict[str, Any]:
+        return self._load()
+
+    def save(self, db: dict[str, Any]) -> None:
+        self._save(db)
+
+    def stage_insert(self, db: dict[str, Any], table: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_table(db, table)
+        row = {"id": self._next_id(db, table), **self._normalize_payload(payload)}
+        db["tables"][table].append(row)
+        return row
+
 
 def _normalize_human_text(value: Any) -> Any:
     if value is None:

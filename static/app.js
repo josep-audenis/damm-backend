@@ -49,6 +49,10 @@ const elements = {
   status: document.querySelector("#status"),
   saveRow: document.querySelector("#saveRow"),
   deleteRow: document.querySelector("#deleteRow"),
+  ordersCsv: document.querySelector("#ordersCsv"),
+  ordersDueDate: document.querySelector("#ordersDueDate"),
+  importOrders: document.querySelector("#importOrders"),
+  ordersStatus: document.querySelector("#ordersStatus"),
 };
 
 async function request(path, options = {}) {
@@ -594,6 +598,51 @@ async function clearTable() {
   setStatus(`Cleaned ${table}. Deleted ${result.deleted} rows.`);
 }
 
+function setOrdersStatus(message, isError = false) {
+  elements.ordersStatus.textContent = message;
+  elements.ordersStatus.classList.toggle("error", isError);
+}
+
+async function importOrdersCsv() {
+  const file = elements.ordersCsv.files?.[0];
+  if (!file) {
+    setOrdersStatus("Pick a CSV file first.", true);
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  if (elements.ordersDueDate.value) {
+    formData.append("due_date", elements.ordersDueDate.value);
+  }
+
+  elements.importOrders.disabled = true;
+  setOrdersStatus(`Uploading ${file.name}...`);
+  try {
+    const response = await fetch("/api/v1/data/orders/import", { method: "POST", body: formData });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.detail || response.statusText);
+    }
+    const parts = [
+      `Inserted ${payload.inserted}`,
+      `Skipped ${payload.skipped}`,
+      `Unknown customers ${payload.unknown_customers.length}`,
+      `Unknown materials ${payload.unknown_materials.length}`,
+    ];
+    setOrdersStatus(`${parts.join(" | ")} (received ${payload.received}).`);
+    elements.ordersCsv.value = "";
+    await refreshTables();
+    if (state.selectedTable === "orders") {
+      await loadRows();
+    }
+  } catch (error) {
+    setOrdersStatus(error.message, true);
+  } finally {
+    elements.importOrders.disabled = false;
+  }
+}
+
 function bindEvents() {
   elements.runOptimization.addEventListener("click", () =>
     runOptimization().catch((error) => {
@@ -607,6 +656,7 @@ function bindEvents() {
   elements.saveRow.addEventListener("click", () => saveRow().catch((error) => setStatus(error.message, true)));
   elements.deleteRow.addEventListener("click", () => deleteRow().catch((error) => setStatus(error.message, true)));
   elements.clearTable.addEventListener("click", () => clearTable().catch((error) => setStatus(error.message, true)));
+  elements.importOrders.addEventListener("click", importOrdersCsv);
 }
 
 async function init() {
