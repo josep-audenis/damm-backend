@@ -1,5 +1,10 @@
 # SmartTruck Wiki Log
 
+## [2026-05-09] ingest | Database schema documented
+
+Created `wiki/data/db-schema.md` from `services/database.py`. Documents all 13 tables (fields, types, FK relationships, natural keys, bootstrap row counts) and the ER diagram. Updated `wiki/index.md` with the new page.
+
+
 ## [2026-05-09] update | Real data preprocessing contract
 
 Accepted the real data unit contract update for `TB`, `EST`, `PQ`, `TIR`, `BID`, and `ZPR`. Added `RouteSummary` to the data model contract for `GET /api/v1/data/routes`.
