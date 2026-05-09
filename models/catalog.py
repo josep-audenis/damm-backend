@@ -13,6 +13,8 @@ class WarehouseBase(BaseModel):
     address: str | None = None
     postal_code: str | None = None
     city: str | None = None
+    lat: float | None = None
+    lng: float | None = None
 
 
 class WarehouseCreate(WarehouseBase):
@@ -82,6 +84,8 @@ class CustomerBase(BaseModel):
     city: str | None = None
     payment_condition: str | None = None
     service_notes: str | None = None
+    lat: float | None = None
+    lng: float | None = None
 
 
 class CustomerCreate(CustomerBase):
@@ -97,14 +101,8 @@ class BootstrapResponse(BaseModel):
     counts: dict[str, int] = Field(default_factory=dict)
 
 
-class SourceDocumentRead(BaseModel):
-    id: int
-    document_number: str
-    document_type: str
-    customer_code: str | None = None
-    transport_code: str | None = None
-    route_code: str | None = None
-    delivery_date: date | None = None
-    payment_condition: str | None = None
-    total_amount: float | None = None
-    source_file: str | None = None
+class GeocodeBatchResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    processed: int
+    updated: int
+    failed: int

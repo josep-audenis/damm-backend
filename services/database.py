@@ -27,8 +27,6 @@ TABLES = [
     "transports",
     "delivery_stops",
     "delivery_lines",
-    "source_documents",
-    "source_document_lines",
 ]
 
 
@@ -42,6 +40,11 @@ class DatabaseService:
             self._save(self._empty_db())
             self._seed_material_types()
             self._seed_default_warehouse()
+        else:
+            db = self._load()
+            migrated = self._migrate(db)
+            if migrated:
+                self._save(db)
 
     def _empty_db(self) -> dict[str, Any]:
         return {
@@ -51,7 +54,10 @@ class DatabaseService:
         }
 
     def _load(self) -> dict[str, Any]:
-        self.init_db()
+        if not self.db_path.exists():
+            payload = self._empty_db()
+            self._save(payload)
+            return payload
         return json.loads(self.db_path.read_text(encoding="utf-8"))
 
     def _save(self, payload: dict[str, Any]) -> None:
@@ -64,6 +70,38 @@ class DatabaseService:
 
     def _find_by(self, rows: list[dict[str, Any]], key: str, value: Any) -> dict[str, Any] | None:
         return next((row for row in rows if row.get(key) == value), None)
+
+    def _migrate(self, db: dict[str, Any]) -> bool:
+        changed = False
+        for row in db["tables"].get("warehouses", []):
+            if "lat" not in row:
+                row["lat"] = None
+                changed = True
+            if "lng" not in row:
+                row["lng"] = None
+                changed = True
+        for row in db["tables"].get("customers", []):
+            if "lat" not in row:
+                row["lat"] = None
+                changed = True
+            if "lng" not in row:
+                row["lng"] = None
+                changed = True
+        for row in db["tables"].get("warehouse_locations", []):
+            if "lat" not in row:
+                row["lat"] = None
+                changed = True
+            if "lng" not in row:
+                row["lng"] = None
+                changed = True
+        for row in db["tables"].get("delivery_stops", []):
+            if "lat" not in row:
+                row["lat"] = None
+                changed = True
+            if "lng" not in row:
+                row["lng"] = None
+                changed = True
+        return changed
 
     def _upsert(self, db: dict[str, Any], table: str, key: str, payload: dict[str, Any]) -> dict[str, Any]:
         rows = db["tables"][table]
@@ -112,6 +150,8 @@ class DatabaseService:
                 "address": None,
                 "postal_code": None,
                 "city": "Mollet del Vallès",
+                "lat": None,
+                "lng": None,
                 "created_at": datetime.now(UTC).isoformat(),
             },
         )
@@ -137,23 +177,6 @@ class DatabaseService:
         self._bootstrap_materials(db, detail_df, locations_df, dimensions_df)
         self._bootstrap_time_windows(db, schedule_df)
         self._bootstrap_delivery_stops_and_lines(db, detail_df)
-        self._upsert(
-            db,
-            "source_documents",
-            "document_number",
-            {
-                "document_number": "excel-bootstrap",
-                "document_type": "catalog_import",
-                "customer_code": None,
-                "transport_code": None,
-                "route_code": None,
-                "delivery_date": None,
-                "payment_condition": None,
-                "total_amount": None,
-                "source_file": "Hackaton.xlsx",
-                "imported_at": datetime.now(UTC).isoformat(),
-            },
-        )
         db["meta"]["generated_at"] = datetime.now(UTC).isoformat()
         self._save(db)
         return {table: len(db["tables"][table]) for table in TABLES}
@@ -192,6 +215,8 @@ class DatabaseService:
                     "zone_name": zone_name,
                     "payment_condition": None,
                     "service_notes": None,
+                    "lat": None,
+                    "lng": None,
                 },
             )
 
@@ -295,6 +320,8 @@ class DatabaseService:
                         "base_unit": location.get("base_unit"),
                         "manufacturer": location.get("manufacturer"),
                         "manufacturer_code": location.get("manufacturer_code"),
+                        "lat": None,
+                        "lng": None,
                     },
                 )
             for _, dim_row in dimensions_df[dimensions_df["Material"] == material_code].iterrows():
@@ -403,6 +430,8 @@ class DatabaseService:
                         "address_snapshot": _clean_text(first["Calle"]),
                         "postal_code_snapshot": _clean_id(first["CP"]),
                         "city_snapshot": _clean_text(first["Población"]),
+                        "lat": None,
+                        "lng": None,
                     },
                 )
                 for _, line in stop_rows.iterrows():
@@ -475,6 +504,26 @@ class DatabaseService:
         db["tables"][table].append(row)
         self._save(db)
         return row
+
+    def update_row(self, table: str, row_id: int, payload: dict[str, Any]) -> dict[str, Any] | None:
+        db = self._load()
+        row = self._find_by(db["tables"][table], "id", row_id)
+        if row is None:
+            return None
+        row.update(payload)
+        self._save(db)
+        return row
+
+    def update_rows_by_field(self, table: str, field: str, value: Any, payload: dict[str, Any]) -> int:
+        db = self._load()
+        updated = 0
+        for row in db["tables"][table]:
+            if row.get(field) == value:
+                row.update(payload)
+                updated += 1
+        if updated:
+            self._save(db)
+        return updated
 
 
 db_service = DatabaseService()
