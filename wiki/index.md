@@ -32,6 +32,7 @@
 
 - [Decision Log](decisions/README.md): architectural decisions and contract proposals.
 - [Preserve Real Delivery Units](decisions/2026-05-09-real-data-units.md): accepted contract change for source delivery units found during Excel preprocessing.
+- [Simplified JSON Database Schema](decisions/2026-05-09-simplified-json-db-schema.md): accepted change removing stored source identifiers, dropping warehouse locations, and moving ordered quantities into `orders`.
 
 ## Log
 

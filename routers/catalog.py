@@ -75,7 +75,6 @@ def list_trucks() -> list[TruckRead]:
 @router.post("/trucks", response_model=TruckRead)
 def create_truck(payload: TruckCreate) -> TruckRead:
     data = payload.model_dump()
-    data["active"] = int(data["active"])
     return TruckRead(**db_service.insert_row("trucks", data))
 
 

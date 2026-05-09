@@ -2,6 +2,11 @@
 
 Use this folder for contract-impacting decisions.
 
+## Accepted Decisions
+
+- [2026-05-09 Preserve Real Delivery Units](2026-05-09-real-data-units.md)
+- [2026-05-09 Simplified JSON Database Schema](2026-05-09-simplified-json-db-schema.md)
+
 Each decision should include:
 
 - Date.
@@ -29,4 +34,3 @@ Template:
 
 ## Migration Notes
 ```
-

@@ -29,38 +29,14 @@ One row per physical warehouse/depot.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | PK |
-| `code` | str | Natural key, e.g. `D131` |
 | `name` | str | e.g. `DDI Mollet` |
-| `storage_center_code` | str | SAP storage center code |
 | `address` | str\|null | Street address |
 | `postal_code` | str\|null | |
 | `city` | str\|null | e.g. `Mollet del Vallès` |
 | `lat` | float\|null | Geocoded latitude |
 | `lng` | float\|null | Geocoded longitude |
-| `created_at` | str | ISO timestamp |
 
-Seeded on init: one row for `D131` (DDI Mollet).
-
----
-
-### `warehouse_locations`
-
-One row per physical shelf/slot within a warehouse. Sourced from *Materiales zubic* sheet.
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | int | PK |
-| `warehouse_id` | int | FK → warehouses.id |
-| `code` | str | Location code, e.g. `FA05A2` (natural key) |
-| `storage_center_code` | str\|null | SAP `Ce.` field |
-| `warehouse_section` | str\|null | `Alm.1` / `Alm.5` etc. |
-| `base_unit` | str\|null | `CAJ` / `PAL` / `UN` |
-| `manufacturer` | str\|null | |
-| `manufacturer_code` | str\|null | |
-| `lat` | float\|null | |
-| `lng` | float\|null | |
-
-Location code format: `FA05A2` → aisle `F`, sub-aisle `A`, bay `05`, column `A`, level `2`.
+Seeded on init: one row for DDI Mollet.
 
 ---
 
@@ -71,11 +47,10 @@ Lookup table — product categories. Seeded on init, not imported from Excel.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | PK |
-| `code` | str | Natural key, e.g. `beer_bottle` |
 | `name` | str | Display name |
 | `description` | str | |
 
-Seeded codes: `beer_bottle`, `beer_barrel`, `water`, `soft_drink`, `dairy`, `coffee`, `wine_spirits`, `food`, `disposable`, `gas`, `returnable_empty`.
+Seeded rows: Beer Bottle, Beer Barrel, Water, Soft Drink, Dairy, Coffee, Wine & Spirits, Food, Disposable, Gas, Returnable Empty.
 
 ---
 
@@ -86,16 +61,12 @@ One row per SKU. Sourced from *Detalle entrega* + *Materiales zubic* + *ZM040*.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | PK |
-| `code` | str | SKU code natural key, e.g. `ED13` |
 | `description` | str | Product name |
 | `base_unit` | str\|null | `CAJ` / `PAL` / `UN` |
 | `material_type_id` | int\|null | FK → material_types.id |
-| `manufacturer` | str\|null | |
-| `manufacturer_code` | str\|null | |
-| `product_hierarchy_code` | str\|null | SAP hierarchy, e.g. `00CF30ZZPCA1E4` |
 | `is_returnable` | bool | True if bottle/crate must be returned |
 
-Returnability rule: codes starting with `ED`, `VO`, `FD`, `DL`, `CJ`, or description contains `RET`.
+Source SKU codes are used during import to build relationships, but are not stored in `materials`.
 
 ---
 
@@ -127,7 +98,6 @@ One row per customer. Sourced from *Direcciones* + *ZONAS*.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | PK |
-| `code` | str | Customer ID natural key, e.g. `91123456` |
 | `name` | str\|null | Primary name (`Nombre 1`) |
 | `name_2` | str\|null | Secondary name (`Nombre 2`) |
 | `address` | str\|null | Street (`Calle`) |
@@ -135,10 +105,10 @@ One row per customer. Sourced from *Direcciones* + *ZONAS*.
 | `city` | str\|null | `Población` |
 | `zone_code` | str\|null | Zone code, e.g. `DD13100002` |
 | `zone_name` | str\|null | Zone name, e.g. `MOLLET PLANA LLADO` |
-| `payment_condition` | null | Reserved, not yet populated |
-| `service_notes` | null | Reserved, not yet populated |
 | `lat` | float\|null | Geocoded |
 | `lng` | float\|null | Geocoded |
+
+Source customer codes are used during import to deduplicate customers and build foreign keys, but are not stored in `customers`.
 
 ---
 
@@ -151,10 +121,8 @@ Delivery time windows per customer per weekday. Sourced from *Horarios Entrega.X
 | `id` | int | PK |
 | `customer_id` | int | FK → customers.id |
 | `weekday` | int | 1=Mon … 5=Fri (source convention) |
-| `shift` | int | 1=morning, 2=afternoon |
 | `open_time` | str\|null | `HH:MM:SS` |
 | `close_time` | str\|null | `HH:MM:SS` |
-| `is_closed` | bool | True = customer closed that day, skip |
 
 ---
 
@@ -165,7 +133,6 @@ One row per driver. Sourced from *Detalle entrega*.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | PK |
-| `code` | str | Driver ID natural key, e.g. `850006` |
 | `name` | str\|null | Driver name |
 
 ---
@@ -190,7 +157,9 @@ Truck master. Not yet bootstrapped from Excel — populated manually or via API.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | PK |
-| *(no fixed schema yet)* | | |
+| `plate` | str\|null | Vehicle plate |
+| `capacity_pallets` | int | Pallet capacity |
+| `warehouse_id` | int\|null | FK → warehouses.id |
 
 ---
 
@@ -201,13 +170,12 @@ One row per truck per day (one full route). Sourced from *Detalle entrega*.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | PK |
-| `code` | str | Transport number natural key, e.g. `11420379` |
 | `transport_date` | str\|null | ISO date `YYYY-MM-DD` |
 | `route_id` | int\|null | FK → routes.id |
 | `driver_id` | int\|null | FK → drivers.id |
 | `truck_id` | int\|null | FK → trucks.id (null until assigned) |
-| `load_number` | null | Reserved |
-| `trip_number` | null | Reserved |
+
+Source transport numbers are used during import to group deliveries, but are not stored in `transports`.
 
 ---
 
@@ -218,39 +186,44 @@ One row per customer stop within a transport. Sourced from *Detalle entrega* gro
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | PK |
-| `delivery_code` | str | `Entrega` number natural key |
 | `transport_id` | int | FK → transports.id |
 | `customer_id` | int | FK → customers.id |
 | `sequence` | int | Stop order within transport (1-based) |
-| `address_snapshot` | str\|null | Street at time of delivery |
-| `postal_code_snapshot` | str\|null | |
-| `city_snapshot` | str\|null | |
 | `lat` | float\|null | Geocoded |
 | `lng` | float\|null | Geocoded |
 
 ---
 
+### `orders`
+
+One row per material quantity ordered by a customer for a due date. Sourced from *Detalle entrega* line rows.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | int | PK |
+| `customer_id` | int | FK → customers.id |
+| `due_date` | str\|null | ISO date `YYYY-MM-DD` |
+| `material_id` | int | FK → materials.id |
+| `quantity` | float | Quantity in `sales_unit` |
+| `sales_unit` | str | Source unit such as `PAL`, `CAJ`, `UN` |
+
+---
+
 ### `delivery_lines`
 
-One row per product line within a stop. Sourced from *Detalle entrega*.
+One row assigning an order to a delivery stop.
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | int | PK |
 | `delivery_stop_id` | int | FK → delivery_stops.id |
-| `material_id` | int | FK → materials.id |
-| `quantity` | float | Quantity in `sales_unit` |
-| `sales_unit` | str | `PAL` / `CAJ` / `UN` |
-| `warehouse_location_code` | null | Reserved — for pick-path optimization |
+| `order_id` | int | FK → orders.id |
 
 ---
 
 ## Entity Relationship Summary
 
 ```
-warehouses
-  └── warehouse_locations (warehouse_id)
-
 material_types
   └── materials (material_type_id)
         └── material_dimensions (material_id)
@@ -264,8 +237,11 @@ trucks  ────────────────────────
   └── transports (driver_id, route_id, truck_id)
         └── delivery_stops (transport_id)
               ├── customers (customer_id)
-              └── delivery_lines (delivery_stop_id)
-                    └── materials (material_id)
+              └── delivery_lines (delivery_stop_id, order_id)
+
+customers ───────────────┐
+materials ───────────────┤
+  └── orders (customer_id, material_id)
 ```
 
 ---
@@ -275,15 +251,17 @@ trucks  ────────────────────────
 | Table | Approx rows |
 |-------|-------------|
 | warehouses | 1 |
-| warehouse_locations | ~1,400 |
 | material_types | 11 |
-| materials | ~1,600 |
-| material_dimensions | ~5,000 |
-| customers | ~1,368 |
-| customer_time_windows | ~1,015 |
-| drivers | ~50 |
-| routes | ~30 |
-| trucks | 0 (not yet bootstrapped) |
-| transports | ~8,900 |
-| delivery_stops | ~80,000+ |
-| delivery_lines | ~82,849 |
+| materials | 1,489 |
+| material_dimensions | 9,359 |
+| customers | 1,203 |
+| customer_time_windows | 535 |
+| drivers | 18 |
+| routes | 18 |
+| trucks | 1 in the checked-in DB; Excel bootstrap does not create trucks |
+| transports | 889 |
+| orders | 66,213 |
+| delivery_stops | 8,927 |
+| delivery_lines | 66,213 |
+
+`warehouse_locations`, `source_documents`, and `source_document_lines` are obsolete and are removed by database migration.
