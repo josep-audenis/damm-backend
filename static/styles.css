@@ -456,8 +456,9 @@ textarea {
 }
 
 .pallet-tile {
-  display: grid;
-  align-content: end;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   min-height: 5rem;
   border: 1px solid rgba(29, 37, 34, 0.16);
   border-radius: 0.45rem;
@@ -471,6 +472,31 @@ textarea {
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.truck-col-header {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #4b5563;
+  text-align: center;
+  background: rgba(0,0,0,0.05);
+  border-radius: 0.25rem;
+}
+
+.pallet-empty {
+  background: transparent !important;
+  border: 2px dashed #cbd5e1;
+  color: #94a3b8;
+}
+
+.pallet-tile .row-num {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 400;
+  opacity: 0.75;
+  margin-bottom: auto;
 }
 
 .schema-panel {
