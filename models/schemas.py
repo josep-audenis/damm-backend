@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date as DateType
+from datetime import datetime as DateTimeType
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -80,3 +81,40 @@ class RoutePreviewResponse(BaseModel):
 
 class OptimizationResultResponse(BaseModel):
     result: OptimizationResult
+
+
+class WsProgress(BaseModel):
+    type: Literal["progress"] = "progress"
+    job_id: str
+    phase: str
+    pct: int
+    message: str
+    timestamp: DateTimeType
+
+
+class WsPartialResult(BaseModel):
+    type: Literal["partial"] = "partial"
+    job_id: str
+    route: RouteResult
+    timestamp: DateTimeType
+
+
+class WsResult(BaseModel):
+    type: Literal["result"] = "result"
+    job_id: str
+    result: OptimizationResult
+    timestamp: DateTimeType
+
+
+class WsDone(BaseModel):
+    type: Literal["done"] = "done"
+    job_id: str
+    timestamp: DateTimeType
+
+
+class WsError(BaseModel):
+    type: Literal["error"] = "error"
+    job_id: str
+    code: str
+    message: str
+    timestamp: DateTimeType

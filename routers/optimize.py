@@ -1,9 +1,8 @@
-from uuid import uuid4
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from models.schemas import OptimizeAcceptedResponse, OptimizeRequest, OptimizationResultResponse
 from services.data_loader import repository
+from services.job_manager import job_manager
 from services.optimization import optimization_service
 
 
@@ -11,8 +10,9 @@ router = APIRouter(prefix="/api/v1/optimize", tags=["optimize"])
 
 
 @router.post("/full", response_model=OptimizeAcceptedResponse)
-def optimize_full(request: OptimizeRequest) -> OptimizeAcceptedResponse:
-    job_id = uuid4().hex[:8]
+def optimize_full(request: OptimizeRequest, background_tasks: BackgroundTasks) -> OptimizeAcceptedResponse:
+    job_id = job_manager.create_job(request)
+    background_tasks.add_task(job_manager.run_job, job_id)
     return OptimizeAcceptedResponse(job_id=job_id, ws_url=f"/ws/jobs/{job_id}")
 
 

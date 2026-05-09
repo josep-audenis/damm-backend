@@ -18,6 +18,8 @@ def test_db_manager_static_app_loads() -> None:
 
     assert response.status_code == 200
     assert "Damm DB Manager" in response.text
+    assert "Run optimization" in response.text
+    assert "Optimized route map" in response.text
     assert "Clean table" in response.text
 
 
