@@ -6,6 +6,19 @@
 - [API Contract](contracts/api-contract.md): endpoint paths, payload shapes, and frontend/backend communication flow.
 - [Separation Of Concerns](contracts/separation-of-concerns.md): what backend owns, what frontend owns, and what must remain shared.
 
+## Technical
+
+- [Algorithms](technical/algorithms.md): route optimization (CVRPTW), bin-packing, warehouse picking logic.
+- [Architecture](technical/architecture.md): tech stack, API design, data pipeline, implementation priorities.
+
+## Data
+
+- [Schema](data/schema.md): field glossary, source files, relationships, and sample queries.
+
+## Planning
+
+- [Sprint Plan](planning/sprint-plan.md): 24h hackathon timeline, phases, MVP definition, risk mitigation.
+
 ## Backend
 
 - [Backend Agent Instructions](backend/agent-instructions.md): backend repo implementation rules.
