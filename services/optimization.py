@@ -21,6 +21,8 @@ from models.domain import (
     ProductLine,
     ProductUnit,
     RouteResult,
+    TruckLayout,
+    TruckSlot,
     TruckType,
     TruckVisualization,
     VizPallet,
@@ -126,6 +128,7 @@ class OptimizationService:
         route = build_route_result(transport, request, ordered_stops, route_indices, matrix, solver_name)
         load = build_load_plan(transport, request, ordered_stops)
         viz = build_truck_visualization(load, ordered_stops)
+        layout = build_truck_layout(transport, ordered_stops)
         now = datetime.now(UTC)
         return OptimizationResult(
             job_id=uuid4().hex[:8],
@@ -138,6 +141,8 @@ class OptimizationService:
             load=load,
             loads=[load],
             viz=viz,
+            truck_layout=layout,
+            truck_layouts=[layout],
         )
 
     async def optimize_orders(self, request: OptimizeRequest, job_id: str | None = None) -> OptimizationResult:
@@ -212,8 +217,20 @@ class OptimizationService:
         now = datetime.now(UTC)
         status_id = ",".join(generated_transport_ids) if generated_transport_ids else "planned"
         viz = None
+        layouts: list[TruckLayout] = []
         if routes and loads:
             viz = build_truck_visualization(loads[0], routes[0].ordered_stops, routes[0].route_geojson)
+            for vehicle_index, (route, load) in enumerate(zip(routes, loads)):
+                transport = TransportDetail(
+                    transport_id=route.transport_id,
+                    route_code=route.route_code,
+                    driver_id=route.driver_id,
+                    driver_name=route.driver_name,
+                    date=route.date,
+                    truck_type=route.truck_type,
+                    stops=route.ordered_stops,
+                )
+                layouts.append(build_truck_layout(transport, route.ordered_stops))
         return OptimizationResult(
             job_id=job_id or uuid4().hex[:8],
             transport_id=status_id,
@@ -225,6 +242,8 @@ class OptimizationService:
             load=loads[0] if loads else None,
             loads=loads,
             viz=viz,
+            truck_layout=layouts[0] if layouts else None,
+            truck_layouts=layouts,
         )
 
 
@@ -872,6 +891,101 @@ def find_pallet_with_capacity(pallets: list[Pallet], volume_l: float) -> Pallet 
         if pallet.total_volume_l < PALLET_CAPACITY_UNITS and volume_l > 0:
             return pallet
     return None
+
+
+def build_truck_layout(
+    transport: TransportDetail,
+    ordered_stops: list[DeliveryStop],
+) -> TruckLayout:
+    total_slots = PALLET_SLOT_BY_TRUCK.get(transport.truck_type, 6)
+    rows = total_slots // 2
+
+    left: list[TruckSlot] = []
+    right: list[TruckSlot] = []
+
+    for stop_idx, stop in enumerate(ordered_stops):
+        demand = max(1, ceil(stop_box_units(stop) / PALLET_CAPACITY_UNITS))
+
+        preferred = "left" if stop_idx % 2 == 0 else "right"
+        pref_list = left if preferred == "left" else right
+        other_name = "right" if preferred == "left" else "left"
+        other_list = right if preferred == "left" else left
+
+        avail_pref = rows - len(pref_list)
+        avail_other = rows - len(other_list)
+
+        if avail_pref >= demand:
+            col_name, target = preferred, pref_list
+        elif avail_other >= demand:
+            col_name, target = other_name, other_list
+        elif avail_pref > 0:
+            col_name, target, demand = preferred, pref_list, avail_pref
+        elif avail_other > 0:
+            col_name, target, demand = other_name, other_list, avail_other
+        else:
+            continue
+
+        product_groups = _split_products(stop.products, demand)
+        for p_idx in range(demand):
+            products = product_groups[p_idx] if p_idx < len(product_groups) else []
+            row_num = len(target) + 1
+            vol = sum(product_box_size(p) * p.quantity for p in products)
+            target.append(TruckSlot(
+                column=col_name,
+                row=row_num,
+                pallet_id=f"PAL-{col_name[0].upper()}{row_num:02d}",
+                stop_id=stop.stop_id,
+                customer_name=stop.customer_name,
+                sequence=stop.sequence,
+                products=products,
+                volume_units=round(vol, 2),
+            ))
+
+    for row_num in range(len(left) + 1, rows + 1):
+        left.append(TruckSlot(column="left", row=row_num, pallet_id=f"PAL-L{row_num:02d}",
+                               stop_id="", customer_name="", sequence=0, volume_units=0.0, is_empty=True))
+    for row_num in range(len(right) + 1, rows + 1):
+        right.append(TruckSlot(column="right", row=row_num, pallet_id=f"PAL-R{row_num:02d}",
+                                stop_id="", customer_name="", sequence=0, volume_units=0.0, is_empty=True))
+
+    used = sum(1 for s in left + right if not s.is_empty)
+    return TruckLayout(
+        truck_type=transport.truck_type,
+        rows=rows,
+        columns=2,
+        left=left,
+        right=right,
+        total_slots=total_slots,
+        used_slots=used,
+    )
+
+
+def _split_products(products: list[ProductLine], n_pallets: int) -> list[list[ProductLine]]:
+    """Distribute products across n_pallets groups. Always returns exactly n_pallets groups."""
+    if n_pallets <= 1 or not products:
+        return [products] + [[] for _ in range(max(0, n_pallets - 1))]
+    groups: list[list[ProductLine]] = [[] for _ in range(n_pallets)]
+    volumes = [0.0] * n_pallets
+    for product in products:
+        box_size = product_box_size(product)
+        remaining_qty = product.quantity
+        for pallet_idx in range(n_pallets):
+            if remaining_qty <= 0:
+                break
+            available = PALLET_CAPACITY_UNITS - volumes[pallet_idx]
+            if available <= 0:
+                continue
+            qty_fits = int(available / box_size) if box_size > 0 else remaining_qty
+            qty_placed = min(remaining_qty, qty_fits) if qty_fits > 0 else remaining_qty
+            if qty_placed > 0:
+                placed = product.model_copy(update={"quantity": qty_placed})
+                groups[pallet_idx].append(placed)
+                volumes[pallet_idx] += box_size * qty_placed
+                remaining_qty -= qty_placed
+        if remaining_qty > 0:
+            leftover = product.model_copy(update={"quantity": remaining_qty})
+            groups[-1].append(leftover)
+    return groups
 
 
 def build_truck_visualization(

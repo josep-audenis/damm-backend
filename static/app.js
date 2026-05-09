@@ -164,7 +164,7 @@ function renderRouteSelector(routes) {
       selector.querySelectorAll(".route-tab").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       renderRoute(route);
-      renderTruck(load, buildVizForLoad(load, route));
+      renderTruck(load, buildVizForLoad(load, route), state.optimization.truck_layouts?.[index]);
       elements.kpiStops.textContent = String(route.total_stops);
       elements.kpiDistance.textContent = `${route.total_distance_km.toFixed(1)} km`;
       elements.kpiTime.textContent = `${Math.round(route.total_time_min)} min`;
@@ -254,24 +254,29 @@ function renderCoordinateFallback(stops, hasAllCoords) {
   }
 }
 
-function renderTruck(load, viz) {
-  const pallets = viz?.pallets || [];
-  elements.loadCount.textContent = `${pallets.length} pallets`;
+function renderTruck(load, viz, truckLayout) {
   elements.truckViz.innerHTML = "";
   elements.pickList.innerHTML = "";
 
-  if (pallets.length === 0) {
-    elements.truckViz.innerHTML = '<div class="empty">No pallets yet.</div>';
-    return;
-  }
+  if (truckLayout && (truckLayout.left?.length || truckLayout.right?.length)) {
+    elements.loadCount.textContent = `${truckLayout.used_slots}/${truckLayout.total_slots} pallets`;
+    renderTruckLayout(truckLayout);
+  } else {
+    const pallets = viz?.pallets || [];
+    elements.loadCount.textContent = `${pallets.length} pallets`;
 
-  for (const pallet of pallets) {
-    const tile = document.createElement("div");
-    tile.className = "pallet-tile";
-    tile.style.background = pallet.color;
-    tile.title = `${pallet.pallet_id} | ${pallet.label}`;
-    tile.innerHTML = `<span>${pallet.pallet_id}</span><small>${pallet.label}</small>`;
-    elements.truckViz.append(tile);
+    if (pallets.length === 0) {
+      elements.truckViz.innerHTML = '<div class="empty">No pallets yet.</div>';
+    } else {
+      for (const pallet of pallets) {
+        const tile = document.createElement("div");
+        tile.className = "pallet-tile";
+        tile.style.background = pallet.color;
+        tile.title = `${pallet.pallet_id} | ${pallet.label}`;
+        tile.innerHTML = `<span>${pallet.pallet_id}</span><small>${pallet.label}</small>`;
+        elements.truckViz.append(tile);
+      }
+    }
   }
 
   for (const item of (load?.pick_list || []).slice(0, 30)) {
@@ -279,6 +284,42 @@ function renderTruck(load, viz) {
     row.className = "pick-item";
     row.innerHTML = `<strong>${item.sequence}</strong><span>${item.warehouse_location} | ${item.quantity} ${item.unit} | ${item.description}</span>`;
     elements.pickList.append(row);
+  }
+}
+
+function renderTruckLayout(layout) {
+  const colors = ["#2563eb", "#16a34a", "#f97316", "#dc2626", "#7c3aed", "#0891b2", "#d97706", "#059669"];
+  const customerColors = {};
+  let colorIdx = 0;
+  for (const slot of [...(layout.left || []), ...(layout.right || [])]) {
+    if (!slot.is_empty && !(slot.stop_id in customerColors)) {
+      customerColors[slot.stop_id] = colors[colorIdx % colors.length];
+      colorIdx++;
+    }
+  }
+  const headerLeft = document.createElement("div");
+  headerLeft.className = "truck-col-header";
+  headerLeft.textContent = "← LEFT";
+  const headerRight = document.createElement("div");
+  headerRight.className = "truck-col-header";
+  headerRight.textContent = "RIGHT →";
+  elements.truckViz.append(headerLeft, headerRight);
+  const leftSlots = layout.left || [];
+  const rightSlots = layout.right || [];
+  for (let i = 0; i < layout.rows; i++) {
+    for (const slot of [leftSlots[i], rightSlots[i]]) {
+      const tile = document.createElement("div");
+      if (!slot || slot.is_empty) {
+        tile.className = "pallet-tile pallet-empty";
+        tile.innerHTML = `<span class="row-num">R${i + 1}</span><small>empty</small>`;
+      } else {
+        tile.className = "pallet-tile";
+        tile.style.background = customerColors[slot.stop_id] || "#4b5563";
+        tile.title = `${slot.pallet_id} | ${slot.customer_name} | ${slot.volume_units.toFixed(1)} box-eq`;
+        tile.innerHTML = `<span class="row-num">R${slot.row}</span><span>${slot.pallet_id}</span><small>${slot.customer_name}</small>`;
+      }
+      elements.truckViz.append(tile);
+    }
   }
 }
 
@@ -320,7 +361,7 @@ function renderOptimizationResult(result) {
   elements.kpiPallets.textContent = load
     ? `${load.pallet_slots_used}/${load.pallet_slots_total}`
     : "-";
-  renderTruck(load, result.viz || buildVizForLoad(load, route));
+  renderTruck(load, result.viz || buildVizForLoad(load, route), result.truck_layout);
   renderRoute(route);
   renderRouteSelector(routes);
 }
