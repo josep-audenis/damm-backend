@@ -120,8 +120,17 @@ class DatabaseService:
         return db
 
     def _save(self, payload: dict[str, Any]) -> None:
+        import logging
+        log = logging.getLogger(__name__)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.db_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        log.debug("_save: writing %s", self.db_path)
+        try:
+            text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+            self.db_path.write_text(text, encoding="utf-8")
+            log.debug("_save: wrote %d bytes", len(text))
+        except Exception:
+            log.exception("_save: FAILED to write %s", self.db_path)
+            raise
 
     def _next_id(self, db: dict[str, Any], table: str) -> str:
         self._ensure_table(db, table)

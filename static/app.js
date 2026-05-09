@@ -128,7 +128,7 @@ function renderRoute(route) {
 
   const hasAllCoords = stops.every((stop) => stop.lat !== null && stop.lng !== null);
   if (hasAllCoords && window.L) {
-    renderLeafletRoute(stops);
+    renderLeafletRoute(stops, route);
   } else {
     renderCoordinateFallback(stops, hasAllCoords);
   }
@@ -145,25 +145,32 @@ function renderRouteSelector(routes) {
   if (!routes || routes.length <= 1) {
     return;
   }
+  const existing = document.querySelector(".route-selector");
+  if (existing) existing.remove();
   const selector = document.createElement("div");
   selector.className = "route-selector";
   routes.forEach((route, index) => {
+    const load = state.optimization.loads?.[index];
     const button = document.createElement("button");
     button.className = `route-tab${index === 0 ? " active" : ""}`;
-    button.textContent = `${route.route_code} | ${route.total_stops}`;
+    const pallets = load ? `${load.pallet_slots_used}/${load.pallet_slots_total}` : "-";
+    button.textContent = `${route.driver_name} · ${route.total_stops} stops · ${pallets} pal`;
     button.addEventListener("click", () => {
       selector.querySelectorAll(".route-tab").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       renderRoute(route);
-      renderTruck(state.optimization.loads?.[index], buildVizForLoad(state.optimization.loads?.[index], route));
-      elements.routeList.prepend(selector);
+      renderTruck(load, buildVizForLoad(load, route));
+      elements.kpiStops.textContent = String(route.total_stops);
+      elements.kpiDistance.textContent = `${route.total_distance_km.toFixed(1)} km`;
+      elements.kpiTime.textContent = `${Math.round(route.total_time_min)} min`;
+      if (load) elements.kpiPallets.textContent = `${load.pallet_slots_used}/${load.pallet_slots_total}`;
     });
     selector.append(button);
   });
-  elements.routeList.prepend(selector);
+  elements.routeMap.before(selector);
 }
 
-function renderLeafletRoute(stops) {
+function renderLeafletRoute(stops, route) {
   elements.routeSvg.style.display = "none";
   if (!state.map) {
     state.map = L.map(elements.routeMap, { scrollWheelZoom: false });
@@ -175,7 +182,7 @@ function renderLeafletRoute(stops) {
   }
   state.routeLayer.clearLayers();
   const latLngs = stops.map((stop) => [stop.lat, stop.lng]);
-  const geojson = state.optimization?.viz?.route_geojson;
+  const geojson = route?.route_geojson || state.optimization?.viz?.route_geojson;
   if (geojson) {
     L.geoJSON(geojson, { style: { color: "#2563eb", weight: 5 } }).addTo(state.routeLayer);
   } else {
@@ -305,8 +312,8 @@ function renderOptimizationResult(result) {
   elements.kpiStops.textContent = String(routes.reduce((total, item) => total + item.total_stops, 0));
   elements.kpiDistance.textContent = `${routes.reduce((total, item) => total + item.total_distance_km, 0).toFixed(1)} km`;
   elements.kpiTime.textContent = `${Math.round(routes.reduce((total, item) => total + item.total_time_min, 0))} min`;
-  elements.kpiPallets.textContent = loads.length
-    ? `${loads.reduce((total, item) => total + item.pallet_slots_used, 0)}/${loads.reduce((total, item) => total + item.pallet_slots_total, 0)}`
+  elements.kpiPallets.textContent = load
+    ? `${load.pallet_slots_used}/${load.pallet_slots_total}`
     : "-";
   renderTruck(load, result.viz || buildVizForLoad(load, route));
   renderRoute(route);

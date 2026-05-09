@@ -182,6 +182,7 @@ class RouteResult(BaseModel):
     baseline_distance_km: float | None = None
     distance_improvement_pct: float | None = None
     explanation: str | None = None
+    route_geojson: dict | None = None
 
 
 class VizPallet(BaseModel):
