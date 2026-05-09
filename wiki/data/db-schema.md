@@ -11,12 +11,11 @@ The backend uses a JSON flat-file database at `data/app_db.json`. Structure:
 ```json
 {
   "meta": { "generated_at": "<ISO timestamp>" },
-  "seq":  { "<table>": <last_id_int>, ... },
   "tables": { "<table>": [ <row>, ... ], ... }
 }
 ```
 
-All rows have an auto-incremented integer `id` as primary key. Foreign keys are integer `id` references (not natural keys).
+All rows have UUID4 string `id` values as primary keys. Foreign keys are UUID string `id` references (not natural keys). Imported human-facing strings are normalized to uppercase; address street prefixes use conservative Catalan forms such as `CARRER`, `AVINGUDA`, and `PLAÇA`.
 
 ---
 
@@ -28,8 +27,8 @@ One row per physical warehouse/depot.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
-| `name` | str | e.g. `DDI Mollet` |
+| `id` | str | UUID PK |
+| `name` | str | e.g. `DDI MOLLET` |
 | `address` | str\|null | Street address |
 | `postal_code` | str\|null | |
 | `city` | str\|null | e.g. `Mollet del Vallès` |
@@ -46,11 +45,11 @@ Lookup table — product categories. Seeded on init, not imported from Excel.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
+| `id` | str | UUID PK |
 | `name` | str | Display name |
 | `description` | str | |
 
-Seeded rows: Beer Bottle, Beer Barrel, Water, Soft Drink, Dairy, Coffee, Wine & Spirits, Food, Disposable, Gas, Returnable Empty.
+Seeded rows: BEER BOTTLE, BEER BARREL, WATER, SOFT DRINK, DAIRY, COFFEE, WINE & SPIRITS, FOOD, DISPOSABLE, GAS, RETURNABLE EMPTY.
 
 ---
 
@@ -60,10 +59,10 @@ One row per SKU. Sourced from *Detalle entrega* + *Materiales zubic* + *ZM040*.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
+| `id` | str | UUID PK |
 | `description` | str | Product name |
 | `base_unit` | str\|null | `CAJ` / `PAL` / `UN` |
-| `material_type_id` | int\|null | FK → material_types.id |
+| `material_type_id` | str\|null | FK → material_types.id |
 | `is_returnable` | bool | True if bottle/crate must be returned |
 
 Source SKU codes are used during import to build relationships, but are not stored in `materials`.
@@ -76,8 +75,8 @@ Physical dimensions per packaging unit. Multiple rows per material (one per unit
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
-| `material_id` | int | FK → materials.id |
+| `id` | str | UUID PK |
+| `material_id` | str | FK → materials.id |
 | `unit` | str | `CAJ` / `PAL` / `UN` / `BOT` etc. |
 | `counter` | int\|null | Units per packaging |
 | `length_cm` | float\|null | Normalized to cm |
@@ -97,7 +96,7 @@ One row per customer. Sourced from *Direcciones* + *ZONAS*.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
+| `id` | str | UUID PK |
 | `name` | str\|null | Primary name (`Nombre 1`) |
 | `name_2` | str\|null | Secondary name (`Nombre 2`) |
 | `address` | str\|null | Street (`Calle`) |
@@ -118,8 +117,8 @@ Delivery time windows per customer per weekday. Sourced from *Horarios Entrega.X
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
-| `customer_id` | int | FK → customers.id |
+| `id` | str | UUID PK |
+| `customer_id` | str | FK → customers.id |
 | `weekday` | int | 1=Mon … 5=Fri (source convention) |
 | `open_time` | str\|null | `HH:MM:SS` |
 | `close_time` | str\|null | `HH:MM:SS` |
@@ -132,7 +131,7 @@ One row per driver. Sourced from *Detalle entrega*.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
+| `id` | str | UUID PK |
 | `name` | str\|null | Driver name |
 
 ---
@@ -143,7 +142,7 @@ One row per route code. Sourced from *Detalle entrega*.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
+| `id` | str | UUID PK |
 | `code` | str | Route code natural key, e.g. `DR0006` |
 | `name` | str\|null | Same as code currently |
 | `zone_code` | null | Reserved |
@@ -156,10 +155,10 @@ Truck master. Not yet bootstrapped from Excel — populated manually or via API.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
+| `id` | str | UUID PK |
 | `plate` | str\|null | Vehicle plate |
 | `capacity_pallets` | int | Pallet capacity |
-| `warehouse_id` | int\|null | FK → warehouses.id |
+| `warehouse_id` | str\|null | FK → warehouses.id |
 
 ---
 
@@ -169,11 +168,11 @@ One row per truck per day (one full route). Sourced from *Detalle entrega*.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
+| `id` | str | UUID PK |
 | `transport_date` | str\|null | ISO date `YYYY-MM-DD` |
-| `route_id` | int\|null | FK → routes.id |
-| `driver_id` | int\|null | FK → drivers.id |
-| `truck_id` | int\|null | FK → trucks.id (null until assigned) |
+| `route_id` | str\|null | FK → routes.id |
+| `driver_id` | str\|null | FK → drivers.id |
+| `truck_id` | str\|null | FK → trucks.id (null until assigned) |
 
 Source transport numbers are used during import to group deliveries, but are not stored in `transports`.
 
@@ -185,9 +184,9 @@ One row per customer stop within a transport. Sourced from *Detalle entrega* gro
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
-| `transport_id` | int | FK → transports.id |
-| `customer_id` | int | FK → customers.id |
+| `id` | str | UUID PK |
+| `transport_id` | str | FK → transports.id |
+| `customer_id` | str | FK → customers.id |
 | `sequence` | int | Stop order within transport (1-based) |
 | `lat` | float\|null | Geocoded |
 | `lng` | float\|null | Geocoded |
@@ -200,10 +199,10 @@ One row per material quantity ordered by a customer for a due date. Sourced from
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
-| `customer_id` | int | FK → customers.id |
+| `id` | str | UUID PK |
+| `customer_id` | str | FK → customers.id |
 | `due_date` | str\|null | ISO date `YYYY-MM-DD` |
-| `material_id` | int | FK → materials.id |
+| `material_id` | str | FK → materials.id |
 | `quantity` | float | Quantity in `sales_unit` |
 | `sales_unit` | str | Source unit such as `PAL`, `CAJ`, `UN` |
 | `delivered_flag` | bool | `false` when pending delivery, `true` after delivered |
@@ -216,9 +215,9 @@ One row assigning an order to a delivery stop.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | int | PK |
-| `delivery_stop_id` | int | FK → delivery_stops.id |
-| `order_id` | int | FK → orders.id |
+| `id` | str | UUID PK |
+| `delivery_stop_id` | str | FK → delivery_stops.id |
+| `order_id` | str | FK → orders.id |
 
 ---
 

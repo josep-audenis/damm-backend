@@ -20,13 +20,13 @@ class WarehouseCreate(WarehouseBase):
 
 
 class WarehouseRead(WarehouseBase):
-    id: int
+    id: str
 
 
 class TruckBase(BaseModel):
     plate: str | None = None
     capacity_pallets: int = 6
-    warehouse_id: int | None = None
+    warehouse_id: str | None = None
 
 
 class TruckCreate(TruckBase):
@@ -34,7 +34,7 @@ class TruckCreate(TruckBase):
 
 
 class TruckRead(TruckBase):
-    id: int
+    id: str
 
 
 class MaterialTypeBase(BaseModel):
@@ -47,13 +47,13 @@ class MaterialTypeCreate(MaterialTypeBase):
 
 
 class MaterialTypeRead(MaterialTypeBase):
-    id: int
+    id: str
 
 
 class MaterialBase(BaseModel):
     description: str
     base_unit: str | None = None
-    material_type_id: int | None = None
+    material_type_id: str | None = None
     is_returnable: bool = False
 
 
@@ -62,7 +62,7 @@ class MaterialCreate(MaterialBase):
 
 
 class MaterialRead(MaterialBase):
-    id: int
+    id: str
 
 
 class CustomerBase(BaseModel):
@@ -80,7 +80,7 @@ class CustomerCreate(CustomerBase):
 
 
 class CustomerRead(CustomerBase):
-    id: int
+    id: str
 
 
 class BootstrapResponse(BaseModel):
