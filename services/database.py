@@ -42,7 +42,8 @@ class DatabaseService:
             self._seed_default_warehouse()
         else:
             db = self._load()
-            migrated = self._migrate(db)
+            migrated = self._normalize_db(db)
+            migrated = self._migrate(db) or migrated
             if migrated:
                 self._save(db)
 
@@ -58,18 +59,54 @@ class DatabaseService:
             payload = self._empty_db()
             self._save(payload)
             return payload
-        return json.loads(self.db_path.read_text(encoding="utf-8"))
+        db = json.loads(self.db_path.read_text(encoding="utf-8"))
+        if self._normalize_db(db):
+            self._save(db)
+        return db
 
     def _save(self, payload: dict[str, Any]) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     def _next_id(self, db: dict[str, Any], table: str) -> int:
+        self._ensure_table(db, table)
         db["seq"][table] += 1
         return int(db["seq"][table])
 
     def _find_by(self, rows: list[dict[str, Any]], key: str, value: Any) -> dict[str, Any] | None:
         return next((row for row in rows if row.get(key) == value), None)
+
+    def _normalize_db(self, db: dict[str, Any]) -> bool:
+        changed = False
+        if not isinstance(db.get("meta"), dict):
+            db["meta"] = {"generated_at": datetime.now(UTC).isoformat()}
+            changed = True
+        if not isinstance(db.get("tables"), dict):
+            db["tables"] = {}
+            changed = True
+        if not isinstance(db.get("seq"), dict):
+            db["seq"] = {}
+            changed = True
+        for table in TABLES:
+            changed = self._ensure_table(db, table) or changed
+        for table in list(db["tables"]):
+            changed = self._ensure_table(db, table) or changed
+        return changed
+
+    def _ensure_table(self, db: dict[str, Any], table: str) -> bool:
+        changed = False
+        if table not in db["tables"] or not isinstance(db["tables"][table], list):
+            db["tables"][table] = []
+            changed = True
+        max_id = max(
+            (int(row["id"]) for row in db["tables"][table] if isinstance(row, dict) and isinstance(row.get("id"), int)),
+            default=0,
+        )
+        current_seq = db["seq"].get(table)
+        if not isinstance(current_seq, int) or current_seq < max_id:
+            db["seq"][table] = max_id
+            changed = True
+        return changed
 
     def _migrate(self, db: dict[str, Any]) -> bool:
         changed = False
@@ -104,6 +141,7 @@ class DatabaseService:
         return changed
 
     def _upsert(self, db: dict[str, Any], table: str, key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_table(db, table)
         rows = db["tables"][table]
         existing = self._find_by(rows, key, payload[key])
         if existing is None:
@@ -496,10 +534,32 @@ class DatabaseService:
 
     def list_rows(self, table: str, limit: int = 100) -> list[dict[str, Any]]:
         db = self._load()
+        self._ensure_table(db, table)
         return db["tables"][table][:limit]
+
+    def list_tables(self) -> dict[str, int]:
+        db = self._load()
+        return {table: len(rows) for table, rows in sorted(db["tables"].items())}
+
+    def describe_table(self, table: str) -> dict[str, list[str]]:
+        db = self._load()
+        self._ensure_table(db, table)
+        fields: dict[str, set[str]] = {}
+        for row in db["tables"][table]:
+            if not isinstance(row, dict):
+                continue
+            for key, value in row.items():
+                fields.setdefault(key, set()).add(type(value).__name__)
+        return {key: sorted(types) for key, types in sorted(fields.items())}
+
+    def get_row(self, table: str, row_id: int) -> dict[str, Any] | None:
+        db = self._load()
+        self._ensure_table(db, table)
+        return self._find_by(db["tables"][table], "id", row_id)
 
     def insert_row(self, table: str, payload: dict[str, Any]) -> dict[str, Any]:
         db = self._load()
+        self._ensure_table(db, table)
         row = {"id": self._next_id(db, table), **payload}
         db["tables"][table].append(row)
         self._save(db)
@@ -507,6 +567,7 @@ class DatabaseService:
 
     def update_row(self, table: str, row_id: int, payload: dict[str, Any]) -> dict[str, Any] | None:
         db = self._load()
+        self._ensure_table(db, table)
         row = self._find_by(db["tables"][table], "id", row_id)
         if row is None:
             return None
@@ -514,8 +575,20 @@ class DatabaseService:
         self._save(db)
         return row
 
+    def delete_row(self, table: str, row_id: int) -> dict[str, Any] | None:
+        db = self._load()
+        self._ensure_table(db, table)
+        rows = db["tables"][table]
+        for index, row in enumerate(rows):
+            if row.get("id") == row_id:
+                deleted = rows.pop(index)
+                self._save(db)
+                return deleted
+        return None
+
     def update_rows_by_field(self, table: str, field: str, value: Any, payload: dict[str, Any]) -> int:
         db = self._load()
+        self._ensure_table(db, table)
         updated = 0
         for row in db["tables"][table]:
             if row.get(field) == value:

@@ -49,6 +49,8 @@ coverage.xml
 *.py.cover
 .hypothesis/
 .pytest_cache/
+.pytest_tmp*/
+pytest-cache-files-*/
 cover/
 
 # Translations
@@ -221,5 +223,9 @@ __marimo__/
 
 # Generated preprocessing checkpoints
 data/processed/
+
+# Local database artifacts
+data/*.db
+data/*.db-journal
 
 pytest

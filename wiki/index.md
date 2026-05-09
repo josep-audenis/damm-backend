@@ -14,6 +14,7 @@
 ## Data
 
 - [Schema](data/schema.md): field glossary, source files, relationships, and sample queries.
+- [DB Schema](data/db-schema.md): app_db.json table definitions, fields, types, FK relationships, and row counts.
 
 ## Planning
 
