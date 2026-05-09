@@ -48,7 +48,8 @@
             <input id="ordersDueDate" type="date" />
           </label>
           <button id="importOrders" class="button primary">Import CSV</button>
-          <p id="ordersStatus" class="status">Pick a CSV with columns customer_name, material_code, material_name, qty, unit. Rows with unknown customers or materials are skipped.</p>
+          <button id="clearImported" class="button danger subtle">Clear imported orders</button>
+          <p id="ordersStatus" class="status">Pick a CSV with columns customer_id, material_id, quantity, sales_unit (UUIDs from the customers and materials tables). Rows with unknown ids are skipped.</p>
         </section>
 
         <button id="refreshTables" class="button primary">Refresh tables</button>
