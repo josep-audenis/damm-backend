@@ -1,3 +1,41 @@
+# Damm Smart Truck — Schema & Wiki
+
+## Wiki Structure
+
+This repo uses an LLM-maintained wiki pattern. Three layers:
+
+- **Raw sources** — `data/raw/` Excel files. Immutable. Never modify.
+- **Wiki** — LLM-generated `.md` files in repo root. LLM owns and maintains these.
+- **Schema** — this file (CLAUDE.md). Defines conventions and workflows.
+
+### Wiki pages
+
+| File | Category | Purpose |
+|------|----------|---------|
+| [index.md](index.md) | Meta | Catalog of all wiki pages |
+| [log.md](log.md) | Meta | Append-only activity log |
+| [README.md](README.md) | Overview | Project overview |
+| [DATA_SCHEMA.md](DATA_SCHEMA.md) | Data | Excel sheet schemas, column types |
+| [DATA_MODELS.md](DATA_MODELS.md) | Data | Domain model definitions |
+| [ALGORITHMS.md](ALGORITHMS.md) | Technical | VRP + bin-packing algorithm design |
+| [BACKEND_PLAN.md](BACKEND_PLAN.md) | Technical | API design and implementation plan |
+| [SPRINT_PLAN.md](SPRINT_PLAN.md) | Planning | Hackathon sprint tasks |
+
+### Conventions
+
+- Every wiki page has a `# Title` and optional YAML frontmatter (`tags`, `sources`, `updated`).
+- Cross-references use markdown links: `[page](page.md)`.
+- On ingest: read source → discuss key takeaways → write/update summary page → update index.md → update related entity/concept pages → append to log.md.
+- On query: read index.md → drill into relevant pages → synthesize answer → optionally file answer as new wiki page.
+- On lint: check for contradictions, stale claims, orphan pages, missing cross-references.
+
+### Log format
+
+Each log entry: `## [YYYY-MM-DD] <type> | <title>`  
+Types: `ingest`, `query`, `lint`, `update`
+
+---
+
 # Damm Smart Truck — Backend Context
 
 ## Project Summary
