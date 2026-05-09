@@ -811,50 +811,22 @@ def build_route_result(
 
 
 def build_load_plan(transport: TransportDetail, request: OptimizeRequest, ordered_stops: list[DeliveryStop]) -> LoadPlan:
+    """Build the load plan with one or more dedicated pallets per customer.
+
+    Pallets are never shared between customers. A customer with `N` box-equivalents
+    of demand gets `ceil(N / PALLET_CAPACITY_UNITS)` pallets; the last one is the
+    partially-filled tail. Pallets are created in reverse delivery order so the
+    first stop ends up nearest the truck door (LIFO loading).
+    """
     pallet_slots_total = PALLET_SLOT_BY_TRUCK.get(transport.truck_type, PALLET_SLOT_BY_TRUCK.get(request.truck_type, 6))
     pallets: list[Pallet] = []
     pick_list: list[PickInstruction] = []
     items_no_location: list[ProductLine] = []
 
     for stop in reversed(ordered_stops):
-        remaining_volume = stop_volume_l(stop)
-        first_pallet_for_stop = True
-        while remaining_volume > 0:
-            pallet = find_pallet_with_capacity(pallets, remaining_volume)
-            if pallet is None:
-                pallet = Pallet(
-                    pallet_index=len(pallets),
-                    pallet_id=f"PAL-{len(pallets) + 1:03d}",
-                )
-                pallets.append(pallet)
-            available_volume = max(0.0, PALLET_CAPACITY_UNITS - pallet.total_volume_l)
-            placed_volume = min(remaining_volume, available_volume)
-            if placed_volume <= 0:
-                break
-            if stop.stop_id not in pallet.stop_ids:
-                pallet.stop_ids.append(stop.stop_id)
-            pallet.total_volume_l = round(pallet.total_volume_l + placed_volume, 2)
-            remaining_volume = round(max(0.0, remaining_volume - placed_volume), 2)
-            if first_pallet_for_stop:
-                for product in stop.products:
-                    if product.warehouse_location is None:
-                        items_no_location.append(product)
-                        continue
-                    pick_list.append(
-                        PickInstruction(
-                            sequence=len(pick_list) + 1,
-                            warehouse_location=product.warehouse_location,
-                            material_code=product.material_code,
-                            description=product.description,
-                            quantity=product.quantity,
-                            unit=product.unit,
-                            pallet_id=pallet.pallet_id,
-                            stop_id=stop.stop_id,
-                        )
-                    )
-                first_pallet_for_stop = False
+        _build_pallets_for_stop(stop, pallets, pick_list, items_no_location)
 
-    pick_list.sort(key=lambda item: (item.warehouse_location, item.material_code))
+    pick_list.sort(key=lambda item: (item.pallet_id, item.warehouse_location, item.material_code))
     for sequence, item in enumerate(pick_list, start=1):
         item.sequence = sequence
 
@@ -884,13 +856,113 @@ def build_load_plan(transport: TransportDetail, request: OptimizeRequest, ordere
     )
 
 
-def find_pallet_with_capacity(pallets: list[Pallet], volume_l: float) -> Pallet | None:
-    for pallet in reversed(pallets):
-        if pallet.is_returnables:
-            continue
-        if pallet.total_volume_l < PALLET_CAPACITY_UNITS and volume_l > 0:
-            return pallet
-    return None
+def _build_pallets_for_stop(
+    stop: DeliveryStop,
+    pallets: list[Pallet],
+    pick_list: list[PickInstruction],
+    items_no_location: list[ProductLine],
+) -> list[Pallet]:
+    total_units = stop_box_units(stop)
+    if total_units <= 0:
+        return []
+
+    pallet_count = max(1, ceil(total_units / PALLET_CAPACITY_UNITS))
+    stop_pallets: list[Pallet] = []
+    for _ in range(pallet_count):
+        pallet = Pallet(
+            pallet_index=len(pallets),
+            pallet_id=f"PAL-{len(pallets) + 1:03d}",
+            stop_ids=[stop.stop_id],
+        )
+        pallets.append(pallet)
+        stop_pallets.append(pallet)
+
+    remaining = total_units
+    for pallet in stop_pallets:
+        placed = min(remaining, PALLET_CAPACITY_UNITS)
+        pallet.total_volume_l = round(placed, 2)
+        remaining = max(0.0, remaining - placed)
+
+    _distribute_products_to_pallets(stop, stop_pallets, pick_list, items_no_location)
+    return stop_pallets
+
+
+def _distribute_products_to_pallets(
+    stop: DeliveryStop,
+    stop_pallets: list[Pallet],
+    pick_list: list[PickInstruction],
+    items_no_location: list[ProductLine],
+) -> None:
+    """Sequentially place each product line onto the customer's pallets.
+
+    A single product is split across consecutive pallets only when its quantity
+    cannot fit on the current pallet. Each placement appends a human-readable
+    line to ``pallet.products_summary`` so the UI can show the actual contents
+    of every pallet, regardless of warehouse-location availability. Pick
+    instructions are emitted only for products whose ``warehouse_location`` is
+    known; products without one still fall into ``items_no_location`` for the
+    pickability warning.
+    """
+    remaining_by_pallet = [PALLET_CAPACITY_UNITS for _ in stop_pallets]
+    pallet_idx = 0
+
+    for product in stop.products:
+        unit_label = product.unit.value if hasattr(product.unit, "value") else str(product.unit)
+        unit_size = product_box_size(product)
+        qty_remaining = product.quantity
+        while qty_remaining > 0 and pallet_idx < len(stop_pallets):
+            available = remaining_by_pallet[pallet_idx]
+            if unit_size <= 0:
+                qty_here = qty_remaining
+            else:
+                fits = int(available / unit_size)
+                qty_here = min(qty_remaining, max(0, fits))
+            if qty_here <= 0:
+                pallet_idx += 1
+                continue
+            pallet = stop_pallets[pallet_idx]
+            _record_pallet_placement(pallet, product, qty_here, unit_label)
+            if product.warehouse_location is not None:
+                pick_list.append(
+                    PickInstruction(
+                        sequence=len(pick_list) + 1,
+                        warehouse_location=product.warehouse_location,
+                        material_code=product.material_code,
+                        description=product.description,
+                        quantity=qty_here,
+                        unit=product.unit,
+                        pallet_id=pallet.pallet_id,
+                        stop_id=stop.stop_id,
+                    )
+                )
+            remaining_by_pallet[pallet_idx] = max(0.0, available - qty_here * unit_size)
+            qty_remaining -= qty_here
+
+        if qty_remaining > 0 and stop_pallets:
+            # Rounding leftover: pin onto the tail pallet rather than dropping it.
+            tail = stop_pallets[-1]
+            _record_pallet_placement(tail, product, qty_remaining, unit_label)
+            if product.warehouse_location is not None:
+                pick_list.append(
+                    PickInstruction(
+                        sequence=len(pick_list) + 1,
+                        warehouse_location=product.warehouse_location,
+                        material_code=product.material_code,
+                        description=product.description,
+                        quantity=qty_remaining,
+                        unit=product.unit,
+                        pallet_id=tail.pallet_id,
+                        stop_id=stop.stop_id,
+                    )
+                )
+
+        if product.warehouse_location is None:
+            items_no_location.append(product)
+
+
+def _record_pallet_placement(pallet: Pallet, product: ProductLine, quantity: int, unit_label: str) -> None:
+    line = f"{quantity} {unit_label} \u00b7 {product.description or product.material_code}"
+    pallet.products_summary.append(line)
 
 
 def build_truck_layout(
@@ -1003,7 +1075,7 @@ def build_truck_visualization(
             position={"x": float(index % 2) * 90.0, "y": float(index // 2) * 130.0, "z": 0.0},
             dims={"l": 120.0, "w": 80.0, "h": max(30.0, min(170.0, pallet.total_volume_l / PALLET_CAPACITY_UNITS * 170.0))},
             stop_ids=pallet.stop_ids,
-            products_summary=[],
+            products_summary=list(pallet.products_summary),
         )
         for index, pallet in enumerate(load.pallets)
     ]
@@ -1024,8 +1096,17 @@ def build_truck_visualization(
 
 
 def stop_pallet_demand(stop: DeliveryStop) -> float:
-    """Fractional pallet slots needed: total box-equivalents / PALLET_CAPACITY_UNITS."""
-    return max(stop_box_units(stop) / PALLET_CAPACITY_UNITS, 0.01)
+    """Whole pallet slots needed for a stop.
+
+    With per-customer pallets (Proposal A), a stop occupies an integer number
+    of pallet slots: ``ceil(box_units / PALLET_CAPACITY_UNITS)``, with a floor
+    of 1 whenever the stop has any product to deliver. Returned as ``float``
+    to keep arithmetic compatible with the OR-Tools demand callback.
+    """
+    units = stop_box_units(stop)
+    if units <= 0:
+        return 0.0
+    return float(max(1, ceil(units / PALLET_CAPACITY_UNITS)))
 
 
 def stop_box_units(stop: DeliveryStop) -> float:
