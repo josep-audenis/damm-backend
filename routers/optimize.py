@@ -39,6 +39,12 @@ async def optimize_full_preview(request: OptimizeRequest) -> OptimizationResultR
 @router.post("/persist", response_model=PersistRouteResponse)
 def optimize_persist(request: PersistRouteRequest) -> PersistRouteResponse:
     """Commit a precomputed RouteResult (typically from /full/preview) as a
-    real transport + delivery_stops. Doesn't re-run the solver."""
-    result = persist_route_result(request.route, warehouse_id=request.warehouse_id)
+    real transport + delivery_stops. Doesn't re-run the solver. When the
+    matching LoadPlan is included it's stashed on the transport row so the
+    UI can later rebuild the truck visualization."""
+    result = persist_route_result(
+        request.route,
+        warehouse_id=request.warehouse_id,
+        load=request.load,
+    )
     return PersistRouteResponse(**result)

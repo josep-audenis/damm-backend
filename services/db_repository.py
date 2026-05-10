@@ -5,6 +5,7 @@ from typing import Any
 
 from models.domain import (
     DeliveryStop,
+    LoadPlan,
     ProductCategory,
     ProductDimensions,
     ProductLine,
@@ -97,7 +98,18 @@ class DbRepository:
             date=transport_date,
             truck_type=self._truck_type(truck),
             stops=self._build_stops(tables, transport["id"], transport_date),
+            load_plan=self._load_plan(transport.get("load_plan_json")),
         )
+
+    def _load_plan(self, raw: Any) -> LoadPlan | None:
+        """Parse the stashed LoadPlan dict back into the model. Defensive —
+        rows persisted before the field existed return None."""
+        if not isinstance(raw, dict):
+            return None
+        try:
+            return LoadPlan.model_validate(raw)
+        except Exception:
+            return None
 
     def get_customer(self, customer_id: str) -> CustomerDetail | None:
         tables = self._tables()

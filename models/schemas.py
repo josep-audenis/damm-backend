@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from models.domain import (
     DeliveryStop,
+    LoadPlan,
     OptimizationResult,
     RouteResult,
     TimeWindow,
@@ -60,6 +61,10 @@ class TransportDetail(BaseModel):
     truck_type: TruckType
     capacity_pallets: int | None = None
     stops: list[DeliveryStop] = Field(default_factory=list)
+    # Populated when the transport was persisted via /api/v1/optimize/persist
+    # with the optimizer's LoadPlan. Lets the truck visualization in the UI
+    # render the real per-route pallet layout instead of a mock fallback.
+    load_plan: LoadPlan | None = None
 
 
 class CustomerDetail(BaseModel):
@@ -116,6 +121,10 @@ class PersistRouteRequest(BaseModel):
     # Used to scope truck resolution so a 6pal truck from another warehouse
     # isn't picked. Optional — when omitted, we pick any matching truck.
     warehouse_id: str | None = None
+    # Stash the LoadPlan that came back alongside this route in the same
+    # /preview response. The read endpoint returns it later so the UI can
+    # rebuild the truck visualization without re-running the solver.
+    load: LoadPlan | None = None
 
 
 class PersistRouteResponse(BaseModel):
