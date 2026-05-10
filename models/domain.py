@@ -208,6 +208,28 @@ class TruckVisualization(BaseModel):
     route_geojson: dict | None = None
 
 
+class TruckSlot(BaseModel):
+    column: Literal["left", "right"]
+    row: int
+    pallet_id: str
+    stop_id: str
+    customer_name: str
+    sequence: int
+    products: list[ProductLine] = Field(default_factory=list)
+    volume_units: float = 0.0
+    is_empty: bool = False
+
+
+class TruckLayout(BaseModel):
+    truck_type: TruckType
+    rows: int
+    columns: int = 2
+    left: list[TruckSlot] = Field(default_factory=list)
+    right: list[TruckSlot] = Field(default_factory=list)
+    total_slots: int = 0
+    used_slots: int = 0
+
+
 class OptimizationResult(BaseModel):
     job_id: str
     transport_id: str
@@ -219,4 +241,6 @@ class OptimizationResult(BaseModel):
     load: LoadPlan | None = None
     loads: list[LoadPlan] = Field(default_factory=list)
     viz: TruckVisualization | None = None
+    truck_layout: TruckLayout | None = None
+    truck_layouts: list[TruckLayout] = Field(default_factory=list)
     error_message: str | None = None
