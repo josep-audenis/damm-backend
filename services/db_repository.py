@@ -186,8 +186,25 @@ class DbRepository:
             lat=stop.get("lat") if stop.get("lat") is not None else customer.get("lat"),
             lng=stop.get("lng") if stop.get("lng") is not None else customer.get("lng"),
             time_window=self._window_for_customer(tables, customer.get("id"), transport_date),
-            products=self._products_for_stop(tables, stop["id"]),
+            products=self._stop_products(tables, stop),
         )
+
+    def _stop_products(
+        self,
+        tables: dict[str, list[dict[str, Any]]],
+        stop: dict[str, Any],
+    ) -> list[ProductLine]:
+        """Per-stop products. Optimizer-persisted stops carry a products_json
+        column on the row (set by route_persistence). For legacy/seeded
+        stops we fall back to walking delivery_lines -> orders -> materials.
+        Both paths return the same ProductLine shape."""
+        raw = stop.get("products_json")
+        if isinstance(raw, list):
+            try:
+                return [ProductLine.model_validate(item) for item in raw]
+            except Exception:
+                pass
+        return self._products_for_stop(tables, stop["id"])
 
     def _products_for_stop(
         self,
