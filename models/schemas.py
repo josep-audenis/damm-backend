@@ -44,6 +44,12 @@ class TransportSummary(BaseModel):
     date: DateType
     stop_count: int
     truck_type: TruckType
+    # Scheduled start time as "HH:MM" — populated for transports persisted
+    # via /optimize/persist (with the no-overlap scheduling). None for
+    # historical/seeded transports that pre-date that flow.
+    start_time: str | None = None
+    # Estimated duration in minutes; same provenance as start_time.
+    duration_min: int | None = None
 
 
 class RouteSummary(BaseModel):
@@ -60,6 +66,9 @@ class TransportDetail(BaseModel):
     date: DateType
     truck_type: TruckType
     capacity_pallets: int | None = None
+    # See TransportSummary for provenance — same fields exposed here too.
+    start_time: str | None = None
+    duration_min: int | None = None
     stops: list[DeliveryStop] = Field(default_factory=list)
     # Populated when the transport was persisted via /api/v1/optimize/persist
     # with the optimizer's LoadPlan. Lets the truck visualization in the UI

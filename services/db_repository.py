@@ -106,6 +106,8 @@ class DbRepository:
                     date=self._date_or_today(transport.get("transport_date")),
                     stop_count=len(stops_by_transport.get(transport["id"], [])),
                     truck_type=self._truck_type(truck),
+                    start_time=transport.get("start_time"),
+                    duration_min=transport.get("duration_min"),
                 )
             )
         return summaries
@@ -146,6 +148,8 @@ class DbRepository:
             driver_name=str(driver.get("name") or ""),
             date=transport_date,
             truck_type=truck_type,
+            start_time=transport.get("start_time"),
+            duration_min=transport.get("duration_min"),
             stops=stops,
             load_plan=load_plan,
         )
