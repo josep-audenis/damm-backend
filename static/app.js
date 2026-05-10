@@ -258,14 +258,12 @@ function renderTruck(load, viz, truckLayout) {
   elements.truckViz.innerHTML = "";
   elements.pickList.innerHTML = "";
 
-  if (truckLayout && (truckLayout.left?.length || truckLayout.right?.length)) {
+  if (truckLayout && truckLayout.slots?.length) {
     elements.loadCount.textContent = `${truckLayout.used_slots}/${truckLayout.total_slots} pallets`;
-    renderTruckLayout(truckLayout);
+    renderTruckLayout(truckLayout, load);
   } else {
     const pallets = viz?.pallets || [];
     elements.loadCount.textContent = `${pallets.length} pallets`;
-
-<<<<<<< HEAD
     if (pallets.length === 0) {
       elements.truckViz.innerHTML = '<div class="empty">No pallets yet.</div>';
     } else {
@@ -273,54 +271,39 @@ function renderTruck(load, viz, truckLayout) {
         const tile = document.createElement("div");
         tile.className = "pallet-tile";
         tile.style.background = pallet.color;
-        tile.title = `${pallet.pallet_id} | ${pallet.label}`;
-        tile.innerHTML = `<span>${pallet.pallet_id}</span><small>${pallet.label}</small>`;
+        const idEl = document.createElement("span");
+        idEl.textContent = pallet.pallet_id;
+        const labelEl = document.createElement("small");
+        labelEl.textContent = pallet.label;
+        tile.append(idEl, labelEl);
+        const summary = pallet.products_summary || [];
+        if (summary.length > 0) {
+          const list = document.createElement("ul");
+          list.className = "pallet-contents";
+          for (const line of summary.slice(0, 4)) {
+            const li = document.createElement("li");
+            li.textContent = line;
+            list.append(li);
+          }
+          if (summary.length > 4) {
+            const more = document.createElement("li");
+            more.className = "more";
+            more.textContent = `+${summary.length - 4} more`;
+            list.append(more);
+          }
+          tile.append(list);
+          tile.title = `${pallet.pallet_id} | ${pallet.label}\n${summary.join("\n")}`;
+        } else {
+          tile.title = `${pallet.pallet_id} | ${pallet.label}`;
+        }
         elements.truckViz.append(tile);
       }
     }
-=======
-  for (const pallet of pallets) {
-    const tile = document.createElement("div");
-    tile.className = "pallet-tile";
-    tile.style.background = pallet.color;
-
-    const idEl = document.createElement("span");
-    idEl.textContent = pallet.pallet_id;
-    const labelEl = document.createElement("small");
-    labelEl.textContent = pallet.label;
-    tile.append(idEl, labelEl);
-
-    const summary = pallet.products_summary || [];
-    if (summary.length > 0) {
-      const list = document.createElement("ul");
-      list.className = "pallet-contents";
-      const max = 4;
-      for (const line of summary.slice(0, max)) {
-        const li = document.createElement("li");
-        li.textContent = line;
-        list.append(li);
-      }
-      if (summary.length > max) {
-        const more = document.createElement("li");
-        more.className = "more";
-        more.textContent = `+${summary.length - max} more`;
-        list.append(more);
-      }
-      tile.append(list);
-      tile.title = `${pallet.pallet_id} | ${pallet.label}\n${summary.join("\n")}`;
-    } else {
-      tile.title = `${pallet.pallet_id} | ${pallet.label}`;
-    }
-
-    elements.truckViz.append(tile);
->>>>>>> c65561c4c44dbcd5c9eed9fa4ff4b2e9983adc9b
   }
 
   const groupedByPallet = new Map();
   for (const item of load?.pick_list || []) {
-    if (!groupedByPallet.has(item.pallet_id)) {
-      groupedByPallet.set(item.pallet_id, []);
-    }
+    if (!groupedByPallet.has(item.pallet_id)) groupedByPallet.set(item.pallet_id, []);
     groupedByPallet.get(item.pallet_id).push(item);
   }
   let printed = 0;
@@ -341,39 +324,83 @@ function renderTruck(load, viz, truckLayout) {
   }
 }
 
-function renderTruckLayout(layout) {
-  const colors = ["#2563eb", "#16a34a", "#f97316", "#dc2626", "#7c3aed", "#0891b2", "#d97706", "#059669"];
-  const customerColors = {};
-  let colorIdx = 0;
-  for (const slot of [...(layout.left || []), ...(layout.right || [])]) {
-    if (!slot.is_empty && !(slot.stop_id in customerColors)) {
-      customerColors[slot.stop_id] = colors[colorIdx % colors.length];
-      colorIdx++;
-    }
+function renderTruckLayout(layout, load) {
+  const colLabels = layout.columns === 1 ? ["CENTER"] : ["← LEFT", "RIGHT →"];
+  elements.truckViz.style.gridTemplateColumns = `repeat(${layout.columns}, minmax(0, 1fr))`;
+
+  // Build pallet_id → products_summary lookup from load
+  const palletSummary = new Map();
+  for (const pallet of load?.pallets || []) {
+    if (pallet.products_summary?.length) palletSummary.set(pallet.pallet_id, pallet.products_summary);
   }
-  const headerLeft = document.createElement("div");
-  headerLeft.className = "truck-col-header";
-  headerLeft.textContent = "← LEFT";
-  const headerRight = document.createElement("div");
-  headerRight.className = "truck-col-header";
-  headerRight.textContent = "RIGHT →";
-  elements.truckViz.append(headerLeft, headerRight);
-  const leftSlots = layout.left || [];
-  const rightSlots = layout.right || [];
-  for (let i = 0; i < layout.rows; i++) {
-    for (const slot of [leftSlots[i], rightSlots[i]]) {
+
+  for (let c = 0; c < layout.columns; c++) {
+    const hdr = document.createElement("div");
+    hdr.className = "truck-col-header";
+    hdr.textContent = colLabels[c] || `COL ${c}`;
+    elements.truckViz.append(hdr);
+  }
+
+  const slotMap = new Map();
+  const returnSlots = [];
+  for (const slot of layout.slots || []) {
+    if (slot.is_return) { returnSlots.push(slot); continue; }
+    slotMap.set(`${slot.row}-${slot.column}`, slot);
+  }
+
+  for (let row = 1; row <= layout.rows; row++) {
+    for (let col = 0; col < layout.columns; col++) {
+      const slot = slotMap.get(`${row}-${col}`);
       const tile = document.createElement("div");
       if (!slot || slot.is_empty) {
         tile.className = "pallet-tile pallet-empty";
-        tile.innerHTML = `<span class="row-num">R${i + 1}</span><small>empty</small>`;
+        tile.innerHTML = `<span class="row-num">R${row}</span><small>empty</small>`;
       } else {
         tile.className = "pallet-tile";
-        tile.style.background = customerColors[slot.stop_id] || "#4b5563";
-        tile.title = `${slot.pallet_id} | ${slot.customer_name} | ${slot.volume_units.toFixed(1)} box-eq`;
-        tile.innerHTML = `<span class="row-num">R${slot.row}</span><span>${slot.pallet_id}</span><small>${slot.customer_name}</small>`;
+        tile.style.background = slot.color || "#4b5563";
+        const summary = palletSummary.get(slot.pallet_id) || [];
+        tile.title = summary.length
+          ? `${slot.pallet_id} | ${slot.customer_name}\n${summary.join("\n")}`
+          : `${slot.pallet_id} | ${slot.customer_name} | ${slot.total_volume_l.toFixed(1)} box-eq`;
+
+        const rowNum = document.createElement("span");
+        rowNum.className = "row-num";
+        rowNum.textContent = `R${slot.row}`;
+        const palletId = document.createElement("span");
+        palletId.textContent = slot.pallet_id;
+        const customer = document.createElement("small");
+        customer.textContent = slot.customer_name;
+        tile.append(rowNum, palletId, customer);
+
+        if (summary.length) {
+          const list = document.createElement("ul");
+          list.className = "pallet-contents";
+          for (const line of summary.slice(0, 4)) {
+            const li = document.createElement("li");
+            li.textContent = line;
+            list.append(li);
+          }
+          if (summary.length > 4) {
+            const more = document.createElement("li");
+            more.className = "more";
+            more.textContent = `+${summary.length - 4} more`;
+            list.append(more);
+          }
+          tile.append(list);
+        }
       }
       elements.truckViz.append(tile);
     }
+  }
+
+  for (const slot of returnSlots) {
+    const tile = document.createElement("div");
+    tile.className = "pallet-tile pallet-return";
+    tile.style.background = slot.color || "#64748b";
+    tile.style.gridColumn = "1 / -1";
+    tile.title = `${slot.pallet_id} | Returnables`;
+    tile.innerHTML = `<span>${slot.pallet_id}</span><small>Returnables</small>`;
+    elements.truckViz.append(tile);
   }
 }
 
@@ -395,6 +422,7 @@ function buildVizForLoad(load, route) {
 }
 
 function renderOptimizationResult(result) {
+  console.log("[OPTIMIZATION_RESULT]", JSON.stringify(result, null, 2));
   state.optimization = result;
   const routes = result.routes?.length ? result.routes : result.route ? [result.route] : [];
   const loads = result.loads?.length ? result.loads : result.load ? [result.load] : [];
