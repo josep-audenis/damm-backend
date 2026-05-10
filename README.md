@@ -124,6 +124,59 @@ curl -X PATCH http://127.0.0.1:8000/api/v1/db/notes/<row_id> \
   -d '{"done":true}'
 ```
 
+## Optimize Routes
+
+Three endpoints under `/api/v1/optimize/`. They drive the planner: generate suggestions cheaply with `preview`, then commit the chosen one with `persist`.
+
+```text
+POST /api/v1/optimize/full          → async; runs solver in background, persists, returns job_id + ws_url
+POST /api/v1/optimize/full/preview  → sync; runs solver and returns the route(s) without saving anything
+POST /api/v1/optimize/persist       → commits a precomputed RouteResult as a transport + delivery_stops
+```
+
+`persist` skips the solver entirely. It takes a `RouteResult` (typically the one you just got back from `preview`) and writes it as a new transport. Driver is matched by name, truck by capacity (scoped to `warehouse_id` when given), and the route row is auto-created if `route_code` doesn't already exist — so the persisted transport renders with its optimizer label in the read endpoints.
+
+### Preview → persist round-trip
+
+Generate a preview:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/optimize/full/preview \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "date": "2026-01-30",
+    "warehouse_id": "<warehouse-uuid>",
+    "max_orders": 30,
+    "solver_time_limit_s": 10
+  }'
+```
+
+That returns `{result: {route, routes, load, viz, ...}}`. Take the `route` object and post it back to commit:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/optimize/persist \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "route": <RouteResult from preview>,
+    "warehouse_id": "<warehouse-uuid>"
+  }'
+```
+
+Response:
+
+```json
+{
+  "status": "ok",
+  "transport_id": "...",
+  "stops_inserted": 3,
+  "resolved_driver_id": null,
+  "resolved_truck_id": "...",
+  "resolved_route_id": "..."
+}
+```
+
+The new transport is queryable via `/api/v1/data/transport/{transport_id}` and shows up in `/api/v1/data/transports`.
+
 ## Import Orders From CSV
 
 Upload a CSV of new orders. The CSV must have a header row and use `;` or `,` as the delimiter. Required columns: `customer_id`, `material_id`, `quantity`, `sales_unit`. Optional column: `due_date`.
