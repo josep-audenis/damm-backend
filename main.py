@@ -3,10 +3,9 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from fastapi.staticfiles import StaticFiles
 
 from routers import catalog, data, db, jobs, optimize
-from services.db_provider import db_service
+from services.database import db_service
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,7 +34,6 @@ app.include_router(data.router)
 app.include_router(db.router)
 app.include_router(jobs.router)
 app.include_router(optimize.router)
-app.mount("/app", StaticFiles(directory="static", html=True), name="app")
 
 
 @app.get("/health")
@@ -45,4 +43,7 @@ def health() -> dict[str, str]:
 
 @app.get("/")
 def root() -> RedirectResponse:
-    return RedirectResponse(url="/app/")
+    # Land on Swagger so anyone hitting the bare host sees the API surface.
+    # The static "DB Manager" demo at /app/ was retired in favour of the
+    # React frontend that lives in the damm-frontend repo.
+    return RedirectResponse(url="/docs")

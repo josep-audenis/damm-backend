@@ -108,10 +108,6 @@ class ClearImportedOrdersResponse(BaseModel):
     deleted_delivery_lines: int
 
 
-class RoutePreviewResponse(BaseModel):
-    route: RouteResult
-
-
 class OptimizationResultResponse(BaseModel):
     result: OptimizationResult
 

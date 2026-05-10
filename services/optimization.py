@@ -30,7 +30,7 @@ from models.domain import (
 )
 from models.schemas import OptimizeRequest, TransportDetail
 from services.coordinates import enrich_stops_from_local_coordinates
-from services.db_provider import db_service
+from services.database import db_service
 
 
 DEPOT_LAT = 41.5409
