@@ -1,9 +1,16 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from models.schemas import OptimizeAcceptedResponse, OptimizeRequest, OptimizationResultResponse
+from models.schemas import (
+    OptimizeAcceptedResponse,
+    OptimizeRequest,
+    OptimizationResultResponse,
+    PersistRouteRequest,
+    PersistRouteResponse,
+)
 from services.db_repository import repository
 from services.job_manager import job_manager
 from services.optimization import optimization_service
+from services.route_persistence import persist_route_result
 
 
 router = APIRouter(prefix="/api/v1/optimize", tags=["optimize"])
@@ -27,3 +34,11 @@ async def optimize_full_preview(request: OptimizeRequest) -> OptimizationResultR
         raise HTTPException(status_code=404, detail="Transport not found")
     result = optimization_service.optimize(transport, request)
     return OptimizationResultResponse(result=result)
+
+
+@router.post("/persist", response_model=PersistRouteResponse)
+def optimize_persist(request: PersistRouteRequest) -> PersistRouteResponse:
+    """Commit a precomputed RouteResult (typically from /full/preview) as a
+    real transport + delivery_stops. Doesn't re-run the solver."""
+    result = persist_route_result(request.route, warehouse_id=request.warehouse_id)
+    return PersistRouteResponse(**result)
