@@ -27,7 +27,7 @@ class OptimizeRequest(BaseModel):
     use_real_roads: bool = False
     respect_time_windows: bool = False
     include_returnables: bool = True
-    solver_time_limit_s: int = Field(default=15, ge=5, le=60)
+    solver_time_limit_s: int = Field(default=30, ge=5, le=120)
 
 
 class OptimizeAcceptedResponse(BaseModel):
@@ -58,6 +58,7 @@ class TransportDetail(BaseModel):
     driver_name: str
     date: DateType
     truck_type: TruckType
+    capacity_pallets: int | None = None
     stops: list[DeliveryStop] = Field(default_factory=list)
 
 

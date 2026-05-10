@@ -126,6 +126,7 @@ class Pallet(BaseModel):
     stop_ids: list[str] = Field(default_factory=list)
     is_returnables: bool = False
     items: list[PalletItem] = Field(default_factory=list)
+    products: list[ProductLine] = Field(default_factory=list)
     products_summary: list[str] = Field(default_factory=list)
     total_height_cm: float = 0.0
     total_weight_kg: float = 0.0
@@ -208,26 +209,43 @@ class TruckVisualization(BaseModel):
     route_geojson: dict | None = None
 
 
+class DimensionsCm(BaseModel):
+    length_cm: float
+    width_cm: float
+    height_cm: float
+
+
 class TruckSlot(BaseModel):
-    column: Literal["left", "right"]
-    row: int
-    pallet_id: str
-    stop_id: str
-    customer_name: str
-    sequence: int
+    column: int                          # 0-based; 0..columns-1
+    row: int                             # 1-based, front→rear
+    pallet_id: str | None = None
+    stop_id: str | None = None
+    customer_name: str | None = None
+    sequence: int | None = None
     products: list[ProductLine] = Field(default_factory=list)
-    volume_units: float = 0.0
+    total_volume_l: float = 0.0
+    total_weight_kg: float = 0.0
+    loaded_height_cm: float = 0.0
+    kind: str = "case-bottle"
     is_empty: bool = False
+    is_return: bool = False
+    color: str | None = None
 
 
 class TruckLayout(BaseModel):
     truck_type: TruckType
     rows: int
     columns: int = 2
-    left: list[TruckSlot] = Field(default_factory=list)
-    right: list[TruckSlot] = Field(default_factory=list)
+    pallet_dims_cm: DimensionsCm = Field(
+        default_factory=lambda: DimensionsCm(length_cm=120.0, width_cm=80.0, height_cm=15.0)
+    )
+    truck_dims_cm: DimensionsCm = Field(
+        default_factory=lambda: DimensionsCm(length_cm=620.0, width_cm=240.0, height_cm=240.0)
+    )
+    slots: list[TruckSlot] = Field(default_factory=list)
     total_slots: int = 0
     used_slots: int = 0
+    return_slots: int = 0
 
 
 class OptimizationResult(BaseModel):

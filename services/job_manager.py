@@ -17,11 +17,16 @@ from models.schemas import (
 )
 from services.db_repository import repository
 from services.coordinates import enrich_stops_from_local_coordinates, enrich_stops_with_geocoding
+import logging
+
+log = logging.getLogger(__name__)
+
 from services.optimization import (
     apply_route,
     build_distance_time_matrix,
     build_load_plan,
     build_route_result,
+    build_truck_layout,
     build_truck_visualization,
     group_stops_by_customer,
     optimization_service,
@@ -114,6 +119,7 @@ class JobManager:
                 )
                 result = await optimization_service.optimize_orders(request, job_id=job_id)
                 record.result = result
+                log.info("job %s result:\n%s", job_id, result.model_dump_json(indent=2))
                 if result.route is not None:
                     await self._publish(record, WsPartialResult(job_id=job_id, route=result.route, timestamp=datetime.now(UTC)))
                 await self._publish_progress(
@@ -207,6 +213,7 @@ class JobManager:
             if request.use_real_roads:
                 route_geojson = await build_route_geojson(grouped_stops, route_indices)
             viz = build_truck_visualization(load, ordered_stops, route_geojson)
+            layout = build_truck_layout(transport, load, ordered_stops)
 
             await self._publish_progress(
                 record,
@@ -221,10 +228,15 @@ class JobManager:
                 created_at=created_at,
                 completed_at=datetime.now(UTC),
                 route=route,
+                routes=[route],
                 load=load,
+                loads=[load],
                 viz=viz,
+                truck_layout=layout,
+                truck_layouts=[layout],
             )
             record.result = result
+            log.info("job %s result:\n%s", job_id, result.model_dump_json(indent=2))
             await self._publish(record, WsResult(job_id=job_id, result=result, timestamp=datetime.now(UTC)))
             await self._publish(record, WsDone(job_id=job_id, timestamp=datetime.now(UTC)))
         except Exception as exc:
