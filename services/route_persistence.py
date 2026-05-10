@@ -6,6 +6,8 @@ side-effects), let the user pick a suggestion, and then commit it cleanly.
 """
 from __future__ import annotations
 
+from datetime import date as DateType
+
 from models.domain import LoadPlan, RouteResult, TruckType
 from services.database import db_service
 from services.driver_assignment import pick_driver_for_route
@@ -62,6 +64,58 @@ def _resolve_truck_id(
         if scoped:
             return str(scoped[0]["id"])
     return str(matches[0]["id"]) if matches else None
+
+
+DEFAULT_START_HHMM = "09:00"
+SCHEDULE_BUFFER_MIN = 15
+DEFAULT_DURATION_MIN = 60
+
+
+def _hhmm_to_min(value: str | None) -> int | None:
+    if not value or len(value) < 4:
+        return None
+    try:
+        h, m = value.split(":")
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _min_to_hhmm(total_min: int) -> str:
+    total = max(0, total_min) % (24 * 60)
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _compute_start_time(
+    db: dict,
+    *,
+    driver_id: str | None,
+    transport_date: DateType,
+) -> str:
+    """Earliest non-overlapping start for this route on the driver's day.
+    Default 09:00; if the driver already has transports today, slot in
+    after the latest one ends + buffer."""
+    if not driver_id:
+        return DEFAULT_START_HHMM
+
+    iso_date = transport_date.isoformat()
+    latest_end_min = 0
+    for t in db["tables"].get("transports", []):
+        if t.get("driver_id") != driver_id:
+            continue
+        if t.get("transport_date") != iso_date:
+            continue
+        start_min = _hhmm_to_min(t.get("start_time"))
+        if start_min is None:
+            continue
+        duration = int(t.get("duration_min") or DEFAULT_DURATION_MIN)
+        end_min = start_min + duration
+        if end_min > latest_end_min:
+            latest_end_min = end_min
+
+    if latest_end_min == 0:
+        return DEFAULT_START_HHMM
+    return _min_to_hhmm(latest_end_min + SCHEDULE_BUFFER_MIN)
 
 
 def _resolve_route_id(db: dict, *, route_code: str) -> str | None:
@@ -123,11 +177,20 @@ def persist_route_result(
     )
     route_id = _resolve_route_id(db, route_code=route.route_code)
 
+    duration_min = int(route.total_time_min or DEFAULT_DURATION_MIN)
+    start_time = _compute_start_time(
+        db,
+        driver_id=driver_id,
+        transport_date=route.date,
+    )
+
     transport_payload: dict[str, object] = {
         "transport_date": route.date.isoformat(),
         "route_id": route_id,
         "driver_id": driver_id,
         "truck_id": truck_id,
+        "start_time": start_time,
+        "duration_min": duration_min,
     }
     if load is not None:
         # Pydantic -> dict so json.dumps in db_service can serialize cleanly
