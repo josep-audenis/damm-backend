@@ -132,6 +132,11 @@ def persist_route_result(
 
     inserted_stops = 0
     for stop in route.ordered_stops:
+        # We don't create delivery_lines here (preview routes don't carry an
+        # order_id per stop), so the read endpoint can't reconstruct the
+        # stop's products by walking delivery_lines -> orders. Stash them
+        # directly on the row instead — the repo prefers this over the join
+        # when present.
         db_service.stage_insert(
             db,
             "delivery_stops",
@@ -141,6 +146,9 @@ def persist_route_result(
                 "sequence": stop.sequence,
                 "lat": stop.lat,
                 "lng": stop.lng,
+                "products_json": [
+                    p.model_dump(mode="json") for p in stop.products
+                ],
             },
         )
         inserted_stops += 1
