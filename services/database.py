@@ -10,6 +10,11 @@ from typing import Any
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT_DIR / "data" / "app_db.json"
+# Tracked seed bundled with the repo. The runtime DB at DB_PATH is not in
+# git — when missing on boot, init_db() copies the seed into place so a
+# fresh clone has a working dataset without anyone having to ship the 10MB
+# blob through git history every time a transport gets persisted.
+SEED_PATH = ROOT_DIR / "data" / "seed.json"
 TABLES = [
     "warehouses",
     "material_types",
@@ -89,6 +94,12 @@ class DatabaseService:
         self.db_path = db_path
 
     def init_db(self) -> None:
+        # Bootstrap from the tracked seed.json on first boot. Lets a fresh
+        # clone come up with a populated dataset without having to commit
+        # the runtime DB on every change.
+        if not self.db_path.exists() and SEED_PATH.exists():
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.db_path.write_bytes(SEED_PATH.read_bytes())
         if not self.db_path.exists():
             db = self._empty_db()
             self._seed_material_types(db)

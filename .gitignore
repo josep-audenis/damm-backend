@@ -229,3 +229,6 @@ data/*.db
 data/*.db-journal
 
 pytest
+
+# Runtime DB — bootstrapped from data/seed.json on first boot.
+data/app_db.json
