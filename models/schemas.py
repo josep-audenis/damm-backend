@@ -111,6 +111,22 @@ class OptimizationResultResponse(BaseModel):
     result: OptimizationResult
 
 
+class PersistRouteRequest(BaseModel):
+    route: RouteResult
+    # Used to scope truck resolution so a 6pal truck from another warehouse
+    # isn't picked. Optional — when omitted, we pick any matching truck.
+    warehouse_id: str | None = None
+
+
+class PersistRouteResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    transport_id: str
+    stops_inserted: int
+    resolved_driver_id: str | None = None
+    resolved_truck_id: str | None = None
+    resolved_route_id: str | None = None
+
+
 class WsProgress(BaseModel):
     type: Literal["progress"] = "progress"
     job_id: str
