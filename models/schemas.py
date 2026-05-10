@@ -67,6 +67,20 @@ class TransportDetail(BaseModel):
     load_plan: LoadPlan | None = None
 
 
+class DriverZoneStat(BaseModel):
+    zone_code: str
+    visits: int
+
+
+class DriverWithZones(BaseModel):
+    id: str
+    name: str
+    # Top zones the driver has historically delivered to, descending by
+    # visit count. Empty when the driver has no historical transports.
+    top_zones: list[DriverZoneStat] = Field(default_factory=list)
+    total_visits: int = 0
+
+
 class CustomerDetail(BaseModel):
     customer_id: str
     name: str

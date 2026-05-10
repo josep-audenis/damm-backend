@@ -13,8 +13,16 @@ from models.domain import (
     TimeWindow,
     TruckType,
 )
-from models.schemas import CustomerDetail, RouteSummary, TransportDetail, TransportSummary
+from models.schemas import (
+    CustomerDetail,
+    DriverWithZones,
+    DriverZoneStat,
+    RouteSummary,
+    TransportDetail,
+    TransportSummary,
+)
 from services.database import db_service
+from services.driver_assignment import driver_zone_familiarity
 from services.load_derivation import derive_load_plan
 
 
@@ -53,6 +61,31 @@ class DbRepository:
             )
             for route in tables["routes"]
         ]
+
+    def list_drivers_with_zones(
+        self, top_n: int = 3
+    ) -> list[DriverWithZones]:
+        """Drivers + their top-N most-familiar zones derived from history.
+        Drivers without any historical transports come back with empty
+        top_zones / total_visits=0 — useful for the catalog UI."""
+        db = db_service.load()
+        familiarity = driver_zone_familiarity(db)
+        out: list[DriverWithZones] = []
+        for driver in db["tables"].get("drivers", []):
+            zones = familiarity.get(driver["id"], {})
+            top = sorted(zones.items(), key=lambda kv: kv[1], reverse=True)[:top_n]
+            out.append(
+                DriverWithZones(
+                    id=str(driver["id"]),
+                    name=str(driver.get("name") or ""),
+                    top_zones=[
+                        DriverZoneStat(zone_code=z, visits=v) for z, v in top
+                    ],
+                    total_visits=sum(zones.values()),
+                )
+            )
+        out.sort(key=lambda d: d.name)
+        return out
 
     def list_transports(self) -> list[TransportSummary]:
         tables = self._tables()
