@@ -15,6 +15,7 @@ from models.domain import (
 )
 from models.schemas import CustomerDetail, RouteSummary, TransportDetail, TransportSummary
 from services.database import db_service
+from services.load_derivation import derive_load_plan
 
 
 class DbRepository:
@@ -89,6 +90,21 @@ class DbRepository:
         driver = drivers.get(transport.get("driver_id"), {})
         truck = trucks.get(transport.get("truck_id"), {})
         transport_date = self._date_or_today(transport.get("transport_date"))
+        truck_type = self._truck_type(truck)
+        stops = self._build_stops(tables, transport["id"], transport_date)
+
+        # Persisted plan wins (it's the optimizer's exact packing). When
+        # absent, derive a plan from the actual stop products so the truck
+        # visualization shows the real cargo instead of falling back to a
+        # client-side mock. See services/load_derivation.py.
+        load_plan = self._load_plan(transport.get("load_plan_json"))
+        if load_plan is None and stops:
+            load_plan = derive_load_plan(
+                transport_id=str(transport["id"]),
+                truck_type=truck_type,
+                transport_date=transport_date,
+                stops=stops,
+            )
 
         return TransportDetail(
             transport_id=str(transport["id"]),
@@ -96,9 +112,9 @@ class DbRepository:
             driver_id=str(driver.get("id") or ""),
             driver_name=str(driver.get("name") or ""),
             date=transport_date,
-            truck_type=self._truck_type(truck),
-            stops=self._build_stops(tables, transport["id"], transport_date),
-            load_plan=self._load_plan(transport.get("load_plan_json")),
+            truck_type=truck_type,
+            stops=stops,
+            load_plan=load_plan,
         )
 
     def _load_plan(self, raw: Any) -> LoadPlan | None:
