@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from models.domain import LoadPlan, RouteResult, TruckType
 from services.database import db_service
+from services.driver_assignment import pick_driver_for_route
 
 
 def _normalize_text(value: str | None) -> str:
@@ -109,6 +110,11 @@ def persist_route_result(
         candidate_id=route.driver_id or None,
         candidate_name=route.driver_name,
     )
+    if driver_id is None:
+        # Optimizer doesn't surface a real driver (its driver_name is the
+        # truck plate). Pick one from the drivers table based on which of
+        # them have historically delivered to this route's zones the most.
+        driver_id = pick_driver_for_route(db, route)
     truck_id = _resolve_truck_id(
         db,
         candidate_id=route.vehicle_id,
