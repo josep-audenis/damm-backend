@@ -30,7 +30,7 @@ def pick_driver_for_route(
     if not drivers:
         return None
 
-    familiarity = _driver_zone_familiarity(db)
+    familiarity = driver_zone_familiarity(db)
     route_zones = _route_zones(db, route)
 
     # Score each driver by total visits to any of the route's zones.
@@ -54,7 +54,7 @@ def pick_driver_for_route(
     return str(most_experienced["id"])
 
 
-def _driver_zone_familiarity(
+def driver_zone_familiarity(
     db: dict[str, Any],
 ) -> dict[str, dict[str, int]]:
     """Walk the historical transports to build

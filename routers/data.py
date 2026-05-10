@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from models.schemas import (
     ClearImportedOrdersResponse,
     CustomerDetail,
+    DriverWithZones,
     HealthResponse,
     OrderImportResponse,
     OrderImportRowError,
@@ -33,6 +34,14 @@ def list_routes() -> list[RouteSummary]:
 @router.get("/transports", response_model=list[TransportSummary])
 def list_transports() -> list[TransportSummary]:
     return repository.list_transports()
+
+
+@router.get("/drivers", response_model=list[DriverWithZones])
+def list_drivers_with_zones() -> list[DriverWithZones]:
+    """Drivers + their top historical zones. Used by the drivers catalog
+    page so the dispatcher can see at a glance which areas each driver
+    covers most often."""
+    return repository.list_drivers_with_zones()
 
 
 @router.get("/transport/{transport_id}", response_model=TransportDetail)
