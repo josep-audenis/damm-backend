@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -61,6 +62,40 @@ async def import_orders_csv(
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty CSV upload")
+
+    try:
+        summary = order_importer.import_csv(content, due_date=due_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return OrderImportResponse(
+        received=summary.received,
+        inserted=summary.inserted,
+        skipped=summary.skipped,
+        unknown_customers=summary.unknown_customers,
+        unknown_materials=summary.unknown_materials,
+        errors=[
+            OrderImportRowError(row=err.row, reason=err.reason, raw=err.raw)
+            for err in summary.errors[:200]
+        ],
+    )
+
+
+SAMPLE_ORDERS_PATH = Path(__file__).resolve().parents[1] / "data" / "sample_orders.csv"
+
+
+@router.post("/orders/import-sample", response_model=OrderImportResponse)
+def import_sample_orders(due_date: date | None = None) -> OrderImportResponse:
+    """Demo helper. Re-imports the bundled `data/sample_orders.csv` against
+    the running DB. Lets the frontend dispatch a one-click "load demo orders"
+    flow without the user needing to pick a file. Same downstream logic as
+    the multipart `/orders/import` endpoint."""
+    if not SAMPLE_ORDERS_PATH.exists():
+        raise HTTPException(status_code=500, detail="Sample CSV not found")
+
+    content = SAMPLE_ORDERS_PATH.read_bytes()
+    if not content:
+        raise HTTPException(status_code=500, detail="Sample CSV is empty")
 
     try:
         summary = order_importer.import_csv(content, due_date=due_date)
