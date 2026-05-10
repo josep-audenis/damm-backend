@@ -6,7 +6,7 @@ side-effects), let the user pick a suggestion, and then commit it cleanly.
 """
 from __future__ import annotations
 
-from models.domain import RouteResult, TruckType
+from models.domain import LoadPlan, RouteResult, TruckType
 from services.database import db_service
 
 
@@ -88,6 +88,7 @@ def persist_route_result(
     route: RouteResult,
     *,
     warehouse_id: str | None = None,
+    load: LoadPlan | None = None,
 ) -> dict[str, str | int | None]:
     """Insert the route as a transport row + one delivery_stops row per stop.
 
@@ -95,6 +96,11 @@ def persist_route_result(
     routes don't carry an order_id per stop, so the connection would have to
     be re-derived. Stops are still queryable via /api/v1/data/transport/{id}
     and the customer linkage is preserved via delivery_stops.customer_id.
+
+    When `load` is provided (the LoadPlan that came back alongside the route
+    in /optimize/full/preview), it's stashed on the transport row as
+    `load_plan_json` so the truck visualization can be reconstructed later
+    without re-running the solver.
     """
     db = db_service.load()
 
@@ -111,16 +117,18 @@ def persist_route_result(
     )
     route_id = _resolve_route_id(db, route_code=route.route_code)
 
-    transport = db_service.stage_insert(
-        db,
-        "transports",
-        {
-            "transport_date": route.date.isoformat(),
-            "route_id": route_id,
-            "driver_id": driver_id,
-            "truck_id": truck_id,
-        },
-    )
+    transport_payload: dict[str, object] = {
+        "transport_date": route.date.isoformat(),
+        "route_id": route_id,
+        "driver_id": driver_id,
+        "truck_id": truck_id,
+    }
+    if load is not None:
+        # Pydantic -> dict so json.dumps in db_service can serialize cleanly
+        # (handles Decimal, enums, dates inside LoadPlan).
+        transport_payload["load_plan_json"] = load.model_dump(mode="json")
+
+    transport = db_service.stage_insert(db, "transports", transport_payload)
 
     inserted_stops = 0
     for stop in route.ordered_stops:
